@@ -1,0 +1,11 @@
+{
+  "domain": "winkhaus_door",
+  "name": "Winkhaus Doorlock",
+  "documentation": "https://github.com/DEIN_BENUTZERNAME/ha-winkhaus-door",
+  "issue_tracker": "https://github.com/DEIN_BENUTZERNAME/ha-winkhaus-door/issues",
+  "codeowners": ["@DEIN_BENUTZERNAME"],
+  "requirements": ["requests"],
+  "version": "1.1.25",
+  "iot_class": "local_polling",
+  "config_flow": true
+}

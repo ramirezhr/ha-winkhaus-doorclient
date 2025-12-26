@@ -1,0 +1,15 @@
+set_day_mode:
+  name: "Set Day Mode"
+  description: "Sets the Winkhaus door to day mode."
+  target:
+    entity:
+      - integration: "winkhaus_door"
+        domain: "lock"
+
+set_night_mode:
+  name: "Set Night Mode"
+  description: "Sets the Winkhaus door to night mode."
+  target:
+    entity:
+      - integration: "winkhaus_door"
+        domain: "lock" 
