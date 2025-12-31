@@ -16,7 +16,6 @@ This integration communicates directly with your door controller over the local 
 * **🔒 Lock Control:** Lock (Night Mode), Unlock (Day Mode), and Open (Pull Latch) the door.
 * **👁️ Door Status:** Binary sensor to see if the door is physically open or closed.
 * **🌗 Day/Night Mode:** Dedicated `select` entity to switch between Day (Trap) and Night (Locked) modes.
-* **🔎 Auto Discovery:** Automatically finds Winkhaus devices on your network via mDNS (`_whdc-device._tcp.local`).
 * **🔐 Secure Local Connection:** Uses HTTPS with handled legacy SSL compatibility.
 
 ## Installation
@@ -39,19 +38,11 @@ This integration communicates directly with your door controller over the local 
 
 ## Configuration
 
-### Auto Discovery (Plug & Play)
-After restarting Home Assistant, if your door lock is connected to the network, it should be discovered automatically.
-1.  Go to **Settings** > **Devices & Services**.
-2.  Look for the "Discovered" section.
-3.  Click **Configure** on the Winkhaus device.
-4.  Enter your **Username** (default: `admin`) and **Password**.
-
 ### Manual Configuration
 1.  Go to **Settings** > **Devices & Services**.
 2.  Click **+ Add Integration**.
 3.  Search for **Winkhaus Doorlock**.
-4.  Choose **Manual Input** or **Search via Network**.
-5.  Enter the IP address, Username, and Password.
+4.  Enter the Serial Number, IP address, Username, and Password.
 
 ## Entities
 
@@ -70,8 +61,6 @@ After setup, the following entities will be available (example for serial `12345
 
 ## Roadmap
 
-* [ ] **Hybrid Mode (WebSocket):** Real-time updates without polling (Planned for v2.5).
-* [ ] Detailed battery/voltage sensors (if supported).
 
 ## License
 
