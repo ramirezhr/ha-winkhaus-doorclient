@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/github/license/ramirezhr/ha-winkhaus-doorclient)](LICENSE)
 [![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue)](https://github.com/ramirezhr)
 
-Custom integration to control and monitor **Winkhaus Door Systems** (e.g., blueCompact, AV3-E with Gateway) via local API (HTTPS).
+Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+) via local API (HTTPS).
 
 This integration communicates directly with your door controller over the local network. **No cloud connection required.**
 
