@@ -99,4 +99,3 @@ def async_remove_services(hass: HomeAssistant) -> None:
     _LOGGER.info("Entferne Winkhaus Door Dienste.")
     hass.services.async_remove(DOMAIN, "set_day_mode")
     hass.services.async_remove(DOMAIN, "set_night_mode")
-    hass.services.async_remove(DOMAIN, "get_system_state")
