@@ -1,6 +1,6 @@
 {
   "domain": "winkhaus_door",
-  "name": "Winkhaus Doorlock",
+  "name": "Winkhaus Doorclient",
   "documentation": "https://github.com/ramirezhr/ha-winkhaus-doorclient",
   "issue_tracker": "https://github.com/ramirezhr/ha-winkhaus-doorclient/issues",
   "codeowners": ["@ramirezhr"],
