@@ -1,4 +1,4 @@
-# in custom_components/winkhaus_door/lock.py
+# in custom_components/winkhaus_doorclient/lock.py
 
 import logging
 from datetime import datetime

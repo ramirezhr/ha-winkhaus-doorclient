@@ -1,4 +1,4 @@
-# in custom_components/winkhaus_door/binary_sensor.py
+# in custom_components/winkhaus_doorclient/binary_sensor.py
 
 import logging
 from homeassistant.components.binary_sensor import (

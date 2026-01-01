@@ -1,4 +1,4 @@
-# in custom_components/winkhaus_door/__init__.py
+# in custom_components/winkhaus_doorclient/__init__.py
 
 from datetime import timedelta
 import logging

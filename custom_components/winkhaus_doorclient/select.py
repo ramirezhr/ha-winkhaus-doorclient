@@ -1,4 +1,4 @@
-# in custom_components/winkhaus_door/select.py
+# in custom_components/winkhaus_doorclient/select.py
 
 import logging
 from homeassistant.components.select import SelectEntity

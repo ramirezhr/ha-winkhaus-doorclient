@@ -1,4 +1,4 @@
-# in custom_components/winkhaus_door/config_flow.py
+# in custom_components/winkhaus_doorclient/config_flow.py
 
 import voluptuous as vol
 from homeassistant import config_entries

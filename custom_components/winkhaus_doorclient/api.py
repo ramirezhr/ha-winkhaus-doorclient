@@ -1,4 +1,4 @@
-# in custom_components/winkhaus_door/api.py
+# in custom_components/winkhaus_doorclient/api.py
 
 import logging
 import requests

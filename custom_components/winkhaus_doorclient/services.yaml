@@ -3,7 +3,7 @@ set_day_mode:
   description: "Sets the Winkhaus door to day mode."
   target:
     entity:
-      - integration: "winkhaus_door"
+      - integration: "winkhaus_doorclient"
         domain: "lock"
 
 set_night_mode:
@@ -11,5 +11,5 @@ set_night_mode:
   description: "Sets the Winkhaus door to night mode."
   target:
     entity:
-      - integration: "winkhaus_door"
+      - integration: "winkhaus_doorclient"
         domain: "lock" 
