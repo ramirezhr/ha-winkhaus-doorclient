@@ -91,7 +91,6 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_set_night_mode(call: ServiceCall) -> None:
         await handle_set_mode(call, "night")
 
-    hass.services.async_register(DOMAIN, "get_system_state", handle_get_system_state)
     hass.services.async_register(DOMAIN, "set_day_mode", handle_set_day_mode)
     hass.services.async_register(DOMAIN, "set_night_mode", handle_set_night_mode)
 
