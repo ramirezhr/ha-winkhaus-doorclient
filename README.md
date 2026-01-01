@@ -50,8 +50,8 @@ After setup, the following entities will be available (example for serial `12345
 
 | Entity ID | Type | Description |
 | :--- | :--- | :--- |
-| `lock.winkhaus_door_123456` | Lock | Main control (Lock/Unlock/Open) |
-| `binary_sensor.winkhaus_door_123456_door_state` | Binary Sensor | Door contact (Open/Closed) |
+| `lock.winkhaus_door_123456_lock` | Lock | Main control (Lock/Unlock/Open) |
+| `binary_sensor.winkhaus_door_123456_door` | Binary Sensor | Door contact (Open/Closed) |
 | `select.winkhaus_door_123456_mode` | Select | Switch between `day` and `night` mode |
 
 ## Troubleshooting
