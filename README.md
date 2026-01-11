@@ -8,7 +8,7 @@ Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+
 
 This integration communicates directly with your door controller over the local network. **No cloud connection required.**
 
-![Logo](https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/winkhaus_door/logo.png)
+![Logo](https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/winkhaus_doorclient/logo.png)
 *(Note: Logo will appear once the brands PR is merged)*
 
 ## Features
@@ -32,7 +32,7 @@ This integration communicates directly with your door controller over the local 
 
 ### Option 2: Manual Installation
 
-1.  Download the `custom_components/winkhaus_door` folder from this repository.
+1.  Download the `custom_components/winkhaus_doorclient` folder from this repository.
 2.  Copy the folder into your Home Assistant `config/custom_components/` directory.
 3.  Restart Home Assistant.
 
@@ -41,7 +41,7 @@ This integration communicates directly with your door controller over the local 
 ### Manual Configuration
 1.  Go to **Settings** > **Devices & Services**.
 2.  Click **+ Add Integration**.
-3.  Search for **Winkhaus Doorlock**.
+3.  Search for **Winkhaus Doorclient**.
 4.  Enter the Serial Number, IP address, Username, and Password.
 
 ## Entities
