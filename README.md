@@ -9,7 +9,7 @@ Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+
 This integration communicates directly with your door controller over the local network. **No cloud connection required.**
 
 ![Logo](https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/winkhaus_doorclient/logo.png)
-*(Note: Logo will appear once the brands PR is merged)*
+
 
 ## Features
 
