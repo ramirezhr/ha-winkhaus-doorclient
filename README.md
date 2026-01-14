@@ -1,8 +1,9 @@
 # Winkhaus Door Integration for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![License](https://img.shields.io/github/license/ramirezhr/ha-winkhaus-doorclient)](LICENSE)
-[![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue)](https://github.com/ramirezhr)
+[![GitHub Release](https://img.shields.io/github/v/release/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
+[![License](https://img.shields.io/github/license/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/blob/main/LICENSE)
+[![HACS](https://img.shields.io/badge/HACS-Default-orange?style=for-the-badge)](https://github.com/hacs/integration)
+[![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue?style=for-the-badge)](https://github.com/ramirezhr)
 
 Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+) via local API (HTTPS).
 
