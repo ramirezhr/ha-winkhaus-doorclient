@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Setup Method",
+        "menu_options": {
+          "scan": "Search via Network (Auto-Discovery)",
+          "manual": "Manual Input"
+        }
+      },
+      "pick": {
+        "title": "Select Device",
+        "data": {
+          "device": "Found Device"
+        }
+      },
+      "auth": {
+        "title": "Authentication",
+        "description": "Please enter the password for {serial_number}.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "manual": {
+        "title": "Manual Configuration",
+        "data": {
+          "serial_number": "Serial Number",
+          "ip_address": "IP Address",
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "no_devices_found": "No Winkhaus devices found in network"
+    }
+  }
+}

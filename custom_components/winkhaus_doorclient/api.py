@@ -65,6 +65,11 @@ class DoorClient:
             interpreted_states.append({"name": key, "value": logical_value})
         return interpreted_states
 
+
+    def get_system_state(self) -> Dict[str, Any]:
+        _LOGGER.info("Rufe detaillierten Systemstatus ab...")
+        return self._request("/api/v1/getSystemState")
+
     def execute_command(self, command: str, value: Optional[str] = None) -> bool:
         payload = {}     
         if command == "mode" and value in ["day", "night"]:

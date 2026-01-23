@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Einrichtungsmethode",
+        "description": "Wie möchtest du das Winkhaus Türschloss verbinden?",
+        "menu_options": {
+          "scan": "Automatische Suche (empfohlen)",
+          "manual": "Manuelle Eingabe"
+        }
+      },
+      "pick": {
+        "title": "Gerät auswählen",
+        "description": "Wähle das gefundene Schloss aus der Liste.",
+        "data": {
+          "device": "Gefundenes Schloss"
+        }
+      },
+      "auth": {
+        "title": "Anmeldung",
+        "description": "Bitte gib das Passwort für **{serial_number}** ein.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      },
+      "manual": {
+        "title": "Manuelle Konfiguration",
+        "description": "Gib die Verbindungsdaten deines Schlosses ein.",
+        "data": {
+          "serial_number": "Seriennummer",
+          "ip_address": "IP-Adresse",
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindungsaufbau gescheitert",
+      "invalid_auth": "Benutzername oder Passwort falsch.",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+      "no_devices_found": "Keine Winkhaus Geräte im Netzwerk gefunden."
+    }
+  }
+}

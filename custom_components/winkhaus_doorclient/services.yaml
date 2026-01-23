@@ -13,3 +13,11 @@ set_night_mode:
     entity:
       - integration: "winkhaus_doorclient"
         domain: "lock" 
+
+get_system_state:
+  name: "Get System State"
+  description: "Fetches the detailed system state from the device and prints it to the Home Assistant log."
+  target:
+    entity:
+      - integration: "winkhaus_doorclient"
+        domain: "lock" 
