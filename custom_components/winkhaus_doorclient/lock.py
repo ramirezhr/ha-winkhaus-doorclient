@@ -7,6 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers import entity_platform
 
 from .const import DOMAIN
 from .api import DoorClient
@@ -22,6 +23,17 @@ async def async_setup_entry(
     client = data["client"]
     coordinator = data["coordinator"]
     async_add_entities([WinkhausLock(coordinator, client, entry)])
+    platform = entity_platform.async_get_current_platform()
+
+    platform.async_register_entity_service(
+        "set_day_mode", {}, "async_set_day_mode"
+    )
+    platform.async_register_entity_service(
+        "set_night_mode", {}, "async_set_night_mode"
+    )
+    platform.async_register_entity_service(
+        "get_system_state", {}, "async_get_system_state"
+    )
 
 class WinkhausLock(CoordinatorEntity, LockEntity):
     _attr_has_entity_name = True
@@ -62,7 +74,22 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
                 attributes[key] = value
 
         return attributes
+    
+    async def async_set_day_mode(self):
+        await self.hass.async_add_executor_job(self._client.execute_command, "mode", "day")
+        await self.coordinator.async_request_refresh()
 
+    async def async_set_night_mode(self):
+        await self.hass.async_add_executor_job(self._client.execute_command, "mode", "night")
+        await self.coordinator.async_request_refresh()
+
+    async def async_get_system_state(self):
+        try:
+            state = await self.hass.async_add_executor_job(self._client.get_system_state)
+            _LOGGER.warning(f"SYSTEM STATE DUMP:\n{state}")
+        except Exception as err:
+            _LOGGER.error(f"Fehler beim Systemstatus: {err}")
+            
     async def async_lock(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(self._client.execute_command, "night")
         await self.coordinator.async_request_refresh()

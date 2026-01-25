@@ -44,7 +44,6 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     import socket
                     try:
                         ip = socket.inet_ntoa(info.addresses[0])
-                        
                         serial = name.split(".")[0] 
                         properties = info.properties
                         for key in [b"serial", b"sn", b"id", b"mac"]:
@@ -93,9 +92,10 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required("device", default=list(device_options.keys())[0]): vol.In(device_options)
             })
         )
-
     async def async_step_auth(self, user_input=None):
         errors = {}
+        
+        serial = self.discovery_info.get("serial_number", "Unbekannt")
         
         if user_input is not None:
             full_data = {
@@ -111,6 +111,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_USERNAME, default="admin"): cv.string,
                 vol.Required(CONF_PASSWORD): cv.string,
             }),
+            description_placeholders={"serial_number": serial},
             errors=errors
         )
 
