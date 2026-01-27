@@ -132,27 +132,24 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo):
         properties = discovery_info.properties
+        serial_number = properties.get("serial_number") or properties.get("serial")
         ip_address = discovery_info.host
-        
-        serial_number = discovery_info.hostname.split(".")[0]
-        for key in ["serial", "sn", "id", "mac"]:
-            if key in properties:
-                try:
-                    val = properties[key]
-                    if isinstance(val, bytes): val = val.decode("utf-8")
-                    serial_number = val
-                    break
-                except: continue
+
+        if not serial_number:
+            return self.async_abort(reason="no_serial_in_zeroconf")
 
         await self.async_set_unique_id(serial_number)
-        self._abort_if_unique_id_configured(updates={CONF_IP_ADDRESS: ip_address})
-
+        
+        self._abort_if_unique_id_configured(updates={
+            CONF_IP_ADDRESS: ip_address
+        })
         self.discovery_info = {
             "serial_number": serial_number,
-            CONF_IP_ADDRESS: ip_address
+            CONF_IP_ADDRESS: ip_address,
         }
         
         self.context["title_placeholders"] = {"serial_number": serial_number}
+
         return await self.async_step_auth()
 
     async def _validate_and_create(self, data):

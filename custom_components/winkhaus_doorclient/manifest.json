@@ -7,6 +7,6 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/ramirezhr/ha-winkhaus-doorclient/issues",
   "requirements": ["requests"],
-  "version": "1.2.4",
+  "version": "1.2.5",
   "zeroconf": ["_whdc-device._tcp.local."]
 }

@@ -87,7 +87,7 @@ logger:
   default: info
   logs:
     custom_components.winkhaus_doorclient: debug
-
+```
 
 ## License
 
