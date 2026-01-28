@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from .api import DoorClient
 from .const import DOMAIN
 
@@ -33,6 +33,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return await hass.async_add_executor_job(client.get_states)
         except Exception as err:
             _LOGGER.error(f"!!! [COORDINATOR] Fehler bei der zentralen Abfrage: {err}")
+            if "401" in str(err) or (hasattr(err, "response") and err.response.status_code == 401):
+                raise ConfigEntryAuthFailed("Authentication failed") from err
             raise UpdateFailed(f"Fehler bei der Kommunikation mit API: {err}")
 
     coordinator = DataUpdateCoordinator(

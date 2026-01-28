@@ -33,6 +33,13 @@
           "username": "Benutzername",
           "password": "Passwort"
         }
+      },
+	  "reauth_confirm": {
+        "title": "Passwort aktualisieren",
+        "description": "Das Passwort für {username} ist nicht mehr gültig. Bitte gib das neue Passwort ein.",
+        "data": {
+          "password": "Neues Passwort"
+        }
       }
     },
     "error": {
@@ -42,7 +49,8 @@
     },
     "abort": {
       "already_configured": "Dieses Gerät ist bereits konfiguriert.",
-      "no_devices_found": "Keine Winkhaus Geräte im Netzwerk gefunden."
+      "no_devices_found": "Keine Winkhaus Geräte im Netzwerk gefunden.",
+	  "reauth_successful": "Passwort erfolgreich aktualisiert!"
     }
   }
 }

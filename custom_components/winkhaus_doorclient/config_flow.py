@@ -152,6 +152,61 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_auth()
 
+    async def async_step_reauth(self, entry_data: dict):
+        self.reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        errors = {}
+
+        if user_input is not None:
+            existing_data = self.reauth_entry.data
+            password = user_input[CONF_PASSWORD]
+
+            try:
+                client = await self.hass.async_add_executor_job(
+                    lambda: DoorClient(
+                        serial_number=existing_data["serial_number"],
+                        ip=existing_data[CONF_IP_ADDRESS],
+                        password=password,
+                        username=existing_data[CONF_USERNAME]
+                    )
+                )
+
+                if await self.hass.async_add_executor_job(client.connect):
+                    self.hass.config_entries.async_update_entry(
+                        self.reauth_entry,
+                        data={
+                            **existing_data,
+                            CONF_PASSWORD: password
+                        }
+                    )
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(self.reauth_entry.entry_id)
+                    )
+                    return self.async_abort(reason="reauth_successful")
+                else:
+                    errors["base"] = "cannot_connect"
+
+            except requests.exceptions.HTTPError as err:
+                if err.response.status_code == 401:
+                    errors["base"] = "invalid_auth"
+                else:
+                    errors["base"] = "cannot_connect"
+            except Exception:
+                errors["base"] = "unknown"
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({
+                vol.Required(CONF_PASSWORD): cv.string,
+            }),
+            description_placeholders={
+                "username": self.reauth_entry.data.get(CONF_USERNAME)
+            },
+            errors=errors
+        )
+
     async def _validate_and_create(self, data):
         errors = {}
         await self.async_set_unique_id(data["serial_number"])
