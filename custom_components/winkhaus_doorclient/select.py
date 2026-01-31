@@ -1,6 +1,7 @@
 # in custom_components/winkhaus_doorclient/select.py
 
 import logging
+import asyncio
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -50,4 +51,5 @@ class WinkhausModeSelect(CoordinatorEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         await self.hass.async_add_executor_job(self._client.execute_command, "mode", option)
+        await asyncio.sleep(2)
         await self.coordinator.async_request_refresh()

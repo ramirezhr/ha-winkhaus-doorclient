@@ -60,9 +60,11 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         browser = ServiceBrowser(aio_zc, "_whdc-device._tcp.local.", handlers=[on_service_state_change])
         
-        await asyncio.sleep(3)
+        try:
+            await asyncio.sleep(3)
+        finally:
+            browser.cancel()
         
-        browser.cancel()
         self.found_devices = found
         
         if not found:

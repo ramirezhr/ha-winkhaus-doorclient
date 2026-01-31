@@ -1,6 +1,7 @@
 # in custom_components/winkhaus_doorclient/lock.py
 
 import logging
+import asyncio
 from datetime import datetime
 from homeassistant.components.lock import LockEntity, LockEntityFeature
 from homeassistant.config_entries import ConfigEntry
@@ -77,10 +78,12 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
     
     async def async_set_day_mode(self):
         await self.hass.async_add_executor_job(self._client.execute_command, "mode", "day")
+        await asyncio.sleep(2)
         await self.coordinator.async_request_refresh()
 
     async def async_set_night_mode(self):
         await self.hass.async_add_executor_job(self._client.execute_command, "mode", "night")
+        await asyncio.sleep(3)
         await self.coordinator.async_request_refresh()
 
     async def async_get_system_state(self):
@@ -92,12 +95,15 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
             
     async def async_lock(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(self._client.execute_command, "night")
+        await asyncio.sleep(3)
         await self.coordinator.async_request_refresh()
 
     async def async_unlock(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(self._client.execute_command, "day")
+        await asyncio.sleep(2)
         await self.coordinator.async_request_refresh()
 
     async def async_open(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(self._client.execute_command, "open")
+        await asyncio.sleep(1)
         await self.coordinator.async_request_refresh()
