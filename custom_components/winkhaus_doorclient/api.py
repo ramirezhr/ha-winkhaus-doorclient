@@ -2,11 +2,14 @@
 
 import logging
 import requests
+import urllib3
 import ssl
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 from urllib3.util import ssl_
 from typing import Optional, Dict, Any, List
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +37,7 @@ class DoorClient:
         self.ip = ip
         self.port = port
         self.username = username
-        self.password = password     
+        self._password = password
         self.session = requests.Session()
         self.session.mount('https://', LegacySSLAdapter())
         self._timeout = 15
@@ -44,12 +47,12 @@ class DoorClient:
             self.get_states()
             return True
         except Exception as err:
-            _LOGGER.error(f"Verbindung fehlgeschlagen: {err}")
+            _LOGGER.error(f"Connection failed: {err}")
             return False
 
     def _request(self, path: str, data: Optional[Dict] = None) -> Dict[str, Any]:
         url = f"https://{self.ip}:{self.port}{path}"
-        auth = (self.username, self.password)
+        auth = (self.username, self._password)
         method = "POST" if data else "GET"
         
         try:
@@ -66,8 +69,8 @@ class DoorClient:
                 response.raise_for_status()
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 401:
-                    raise Exception("Authentifizierung fehlgeschlagen (Falsches Passwort?)") from e
-                raise Exception(f"HTTP Fehler: {e.response.status_code}") from e
+                    raise Exception("Authentication failed (Wrong password?)") from e
+                raise Exception(f"HTTP Error: {e.response.status_code}") from e
 
             if not response.content:
                 return {}
@@ -80,19 +83,19 @@ class DoorClient:
 
             if "XC_ERR" in response_json:
                 error_info = response_json["XC_ERR"]
-                error_msg = error_info.get("text", "Unbekannter API-Fehler")
-                raise Exception(f"Geräte-Fehler: {error_msg}")
+                error_msg = error_info.get("text", "Unknown API error")
+                raise Exception(f"Device Error: {error_msg}")
 
             return response_json.get("XC_SUC", {})
 
         except requests.exceptions.RequestException as e:
-            raise Exception(f"Netzwerkfehler: {e}") from e
+            raise Exception(f"Network error: {e}") from e
 
     def get_states(self) -> List[Dict[str, Any]]:
         raw_states = self._request("/api/v1/getStates")
         
         if not isinstance(raw_states, dict):
-            _LOGGER.warning(f"getStates lieferte unerwarteten Datentyp: {type(raw_states)}")
+            _LOGGER.warning(f"getStates returned unexpected data type: {type(raw_states)}")
             return []
 
         interpreted_states = []

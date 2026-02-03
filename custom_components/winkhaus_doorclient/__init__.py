@@ -50,7 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             error_msg = str(err)
             error_type = type(err).__name__
             
-            if "401" in error_msg or "Authentifizierung fehlgeschlagen" in error_msg or "Authentication failed" in error_msg:
+            if "401" in error_msg or "Authentication failed" in error_msg:
                 _LOGGER.error(f"[COORDINATOR {serial}] Authentication failed - triggering reauth")
                 raise ConfigEntryAuthFailed("Authentication failed") from err
             

@@ -13,11 +13,13 @@ This integration communicates directly with your door controller over the local 
 
 ## ✨ Features
 
-* **🔒 Lock Control:** Lock (Night Mode), Unlock (Day Mode), and Open (Pull Latch) the door.
+* **🔓 Lock Control:** Lock (Night Mode), Unlock (Day Mode), and Open (Pull Latch) the door.
 * **🚪 Door Status:** Binary sensor to see if the door is physically open or closed.
 * **🌗 Day/Night Mode:** Dedicated `select` entity to switch between Day (Trap) and Night (Locked) modes.
-* **🔎 Auto-Discovery:** Automatically finds your Winkhaus door in the network (Zeroconf/mDNS).
+* **🔍 Auto-Discovery:** Automatically finds your Winkhaus door in the network (Zeroconf/mDNS).
 * **🔐 Secure Local Connection:** Uses HTTPS with handled legacy SSL compatibility.
+* **🛡️ Network Resilience:** Maintains last known state during temporary network issues (router restarts, WiFi hiccups). Automatically recovers when connection is restored.
+* **🔄 Smart Reauth:** If the door password changes, you'll be prompted to update it via the Repairs dashboard - no need to reconfigure the entire integration.
 
 ## 🚀 Installation
 
@@ -71,13 +73,82 @@ You can use these services in your automations:
 * `winkhaus_doorclient.set_day_mode` - Switches the door to day mode (unlocked/trap).
 * `winkhaus_doorclient.set_night_mode` - Switches the door to night mode (locked).
 
+## 📝 Example Automations
+
+### Auto-lock at night
+```yaml
+automation:
+  - alias: "Lock door at bedtime"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    action:
+      - service: winkhaus_doorclient.set_night_mode
+        target:
+          entity_id: lock.winkhaus_door_123456_lock
+```
+
+### Notify when door is opened
+```yaml
+automation:
+  - alias: "Door opened notification"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.winkhaus_door_123456_door
+        to: "on"
+    action:
+      - service: notify.mobile_app
+        data:
+          message: "Front door has been opened!"
+```
+
+### Switch to day mode in the morning
+```yaml
+automation:
+  - alias: "Unlock door in the morning"
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.workday_sensor
+        state: "on"
+    action:
+      - service: winkhaus_doorclient.set_day_mode
+        target:
+          entity_id: lock.winkhaus_door_123456_lock
+```
+
+## 🔒 Security Note
+
+This integration communicates over **HTTPS (TLS 1.2)** with your Winkhaus door controller. Due to the device using a self-signed/generic certificate, SSL certificate verification is disabled (`verify=False` in the code).
+
+**Important:** 
+- ✅ The connection is still **encrypted** via TLS
+- ✅ Communication occurs **only within your local network**
+- ✅ **No data** is transmitted to external servers or the cloud
+- ⚠️ The device identity cannot be cryptographically verified
+
+For maximum security, ensure your Winkhaus door is on a **trusted network segment** (e.g., isolated IoT VLAN).
+
+### Why Legacy SSL Support?
+
+The integration uses `SECLEVEL=1` and allows older cipher suites to maintain compatibility with the door controller's embedded firmware. This is a common requirement for IoT devices that cannot be easily updated.
+
 ## 🔧 Troubleshooting
 
 **"Translation Error" during setup:**
 Ensure you are running at least version **v1.2.4** or newer.
 
 **Connection Failed:**
-Check if the door is reachable via ping. The integration uses port 443 (HTTPS) by default.
+- Check if the door is reachable via ping from Home Assistant
+- The integration uses port **443 (HTTPS)** by default
+- Verify username and password (default: `admin` / your-password)
+
+**Entities show "Unavailable":**
+- Check the Home Assistant log for error messages
+- If the door is temporarily offline (e.g., router restart), the integration will keep the last known state for up to 3 minutes
+- Connection will automatically recover when the device is back online
 
 **Debug Logging:**
 To enable debug logging, add this to your `configuration.yaml`:
@@ -88,6 +159,12 @@ logger:
   logs:
     custom_components.winkhaus_doorclient: debug
 ```
+
+Then check **Settings** > **System** > **Logs** for detailed information.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
