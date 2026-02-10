@@ -14,6 +14,7 @@ from zeroconf import ServiceBrowser
 import requests
 import logging
 import asyncio
+import socket
 
 from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
 from .api import DoorClient
@@ -27,6 +28,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self):
         self.discovery_info = {}
         self.found_devices = {} 
+        self.reauth_entry = None
 
     @staticmethod
     @callback
@@ -50,7 +52,6 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if state_change.name == "Added":
                 info = zeroconf.get_service_info(service_type, name)
                 if info:
-                    import socket
                     try:
                         ip = socket.inet_ntoa(info.addresses[0])
                         serial = name.split(".")[0] 
@@ -260,8 +261,9 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors
         )
 
+
 class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
-       def __init__(self, config_entry):
+    def __init__(self, config_entry):
         self.entry_saved = config_entry
 
     async def async_step_init(self, user_input=None):
@@ -271,6 +273,7 @@ class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
         current_interval = self.entry_saved.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
         )
+
 
         if current_interval < 30:
             current_interval = 30
