@@ -1,56 +1,70 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Einrichtungsmethode",
-        "description": "Wie möchtest du das Winkhaus Türschloss verbinden?",
-        "menu_options": {
-          "scan": "Automatische Suche (empfohlen)",
-          "manual": "Manuelle Eingabe"
+    "config": {
+        "step": {
+            "user": {
+                "title": "Einrichtungsmethode",
+                "description": "Wie möchtest du das Winkhaus Türschloss verbinden?",
+                "menu_options": {
+                    "scan": "Automatische Suche (empfohlen)",
+                    "manual": "Manuelle Eingabe"
+                }
+            },
+            "pick": {
+                "title": "Gerät auswählen",
+                "description": "Wähle das gefundene Schloss aus der Liste.",
+                "data": {
+                    "device": "Gefundenes Schloss"
+                }
+            },
+            "auth": {
+                "title": "Anmeldung",
+                "description": "Bitte gib das Passwort für **{serial_number}** ein.",
+                "data": {
+                    "username": "Benutzername",
+                    "password": "Passwort"
+                }
+            },
+            "manual": {
+                "title": "Manuelle Konfiguration",
+                "description": "Gib die Verbindungsdaten deines Schlosses ein.",
+                "data": {
+                    "serial_number": "Seriennummer",
+                    "ip_address": "IP-Adresse",
+                    "username": "Benutzername",
+                    "password": "Passwort"
+                }
+            },
+            "reauth_confirm": {
+                "title": "Passwort aktualisieren",
+                "description": "Das Passwort für {username} ist nicht mehr gültig. Bitte gib das neue Passwort ein.",
+                "data": {
+                    "password": "Neues Passwort"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Verbindungsaufbau gescheitert",
+            "invalid_auth": "Benutzername oder Passwort falsch.",
+            "unknown": "Ein unerwarteter Fehler ist aufgetreten."
+        },
+        "abort": {
+            "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+            "no_devices_found": "Keine Winkhaus Geräte im Netzwerk gefunden.",
+            "reauth_successful": "Passwort erfolgreich aktualisiert!"
         }
-      },
-      "pick": {
-        "title": "Gerät auswählen",
-        "description": "Wähle das gefundene Schloss aus der Liste.",
-        "data": {
-          "device": "Gefundenes Schloss"
-        }
-      },
-      "auth": {
-        "title": "Anmeldung",
-        "description": "Bitte gib das Passwort für **{serial_number}** ein.",
-        "data": {
-          "username": "Benutzername",
-          "password": "Passwort"
-        }
-      },
-      "manual": {
-        "title": "Manuelle Konfiguration",
-        "description": "Gib die Verbindungsdaten deines Schlosses ein.",
-        "data": {
-          "serial_number": "Seriennummer",
-          "ip_address": "IP-Adresse",
-          "username": "Benutzername",
-          "password": "Passwort"
-        }
-      },
-	  "reauth_confirm": {
-        "title": "Passwort aktualisieren",
-        "description": "Das Passwort für {username} ist nicht mehr gültig. Bitte gib das neue Passwort ein.",
-        "data": {
-          "password": "Neues Passwort"
-        }
-      }
     },
-    "error": {
-      "cannot_connect": "Verbindungsaufbau gescheitert",
-      "invalid_auth": "Benutzername oder Passwort falsch.",
-      "unknown": "Ein unerwarteter Fehler ist aufgetreten."
-    },
-    "abort": {
-      "already_configured": "Dieses Gerät ist bereits konfiguriert.",
-      "no_devices_found": "Keine Winkhaus Geräte im Netzwerk gefunden.",
-	  "reauth_successful": "Passwort erfolgreich aktualisiert!"
+    "options": {
+        "step": {
+            "init": {
+                "title": "Einstellungen",
+                "description": "Update Intervall",
+                "data": {
+                    "scan_interval": "Abfrage Intervall (Sekunden)"
+                },
+                "data_description": {
+                    "scan_interval": "Hier kannst du das Abfrage-Intervall (30-300s) anpassen. Standard sind 60 Sekunden."
+                }
+            }
+        }
     }
-  }
 }

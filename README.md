@@ -67,6 +67,21 @@ After setup, the following entities will be available (example for serial `12345
 | `binary_sensor.winkhaus_door_123456_door` | Binary Sensor | Door contact (Open/Closed). |
 | `select.winkhaus_door_123456_mode` | Select | Switch between `day` and `night` mode. |
 
+## Configuration
+
+### Polling Interval
+You can customize the polling interval to define how often the integration updates the door status from the physical device.
+
+- **Setting:** Adjustable via a slider in the integration options.
+- **Range:** 30 to 300 seconds.
+- **Default:** 60 seconds.
+
+To change the interval:
+1. Go to **Settings** > **Devices & Services**.
+2. Find the **Winkhaus Door** integration.
+3. Click on **Configure**.
+4. Adjust the slider to your desired value and click **Submit**.
+
 ### Services
 You can use these services in your automations:
 

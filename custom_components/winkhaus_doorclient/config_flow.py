@@ -1,17 +1,21 @@
-# in custom_components/winkhaus_doorclient/config_flow.py
-
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.components.zeroconf import async_get_instance
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
 from zeroconf import ServiceBrowser
 import requests
 import logging
 import asyncio
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
 from .api import DoorClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,6 +27,11 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self):
         self.discovery_info = {}
         self.found_devices = {} 
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        return WinkhausOptionsFlowHandler(config_entry)
 
     async def async_step_user(self, user_input=None):
         return self.async_show_menu(
@@ -94,9 +103,9 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required("device", default=list(device_options.keys())[0]): vol.In(device_options)
             })
         )
+
     async def async_step_auth(self, user_input=None):
         errors = {}
-        
         serial = self.discovery_info.get("serial_number", "Unbekannt")
         
         if user_input is not None:
@@ -249,4 +258,35 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_PASSWORD, default=data[CONF_PASSWORD]): cv.string,
             }),
             errors=errors
+        )
+
+class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
+       def __init__(self, config_entry):
+        self.entry_saved = config_entry
+
+    async def async_step_init(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current_interval = self.entry_saved.options.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        )
+
+        if current_interval < 30:
+            current_interval = 30
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_SCAN_INTERVAL, 
+                    default=current_interval
+                ): NumberSelector(NumberSelectorConfig(
+                    min=30, 
+                    max=300, 
+                    step=1, 
+                    mode=NumberSelectorMode.SLIDER,
+                    unit_of_measurement="s"
+                )),
+            }),
         )

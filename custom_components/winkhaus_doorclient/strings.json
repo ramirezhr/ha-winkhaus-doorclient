@@ -1,53 +1,68 @@
 {
-  "config": {
-    "step": {
-      "user": {
-        "title": "Setup Method",
-        "menu_options": {
-          "scan": "Search via Network (Auto-Discovery)",
-          "manual": "Manual Input"
+    "config": {
+        "step": {
+            "user": {
+                "title": "Setup Method",
+                "menu_options": {
+                    "scan": "Search via Network (Auto-Discovery)",
+                    "manual": "Manual Input"
+                }
+            },
+            "pick": {
+                "title": "Select Device",
+                "data": {
+                    "device": "Found Device"
+                }
+            },
+            "auth": {
+                "title": "Authentication",
+                "description": "Please enter the password for {serial_number}.",
+                "data": {
+                    "username": "Username",
+                    "password": "Password"
+                }
+            },
+            "manual": {
+                "title": "Manual Configuration",
+                "data": {
+                    "serial_number": "Serial Number",
+                    "ip_address": "IP Address",
+                    "username": "Username",
+                    "password": "Password"
+                }
+            },
+            "reauth_confirm": {
+                "title": "Update Password",
+                "description": "The password for user {username} is invalid. Please enter the new password.",
+                "data": {
+                    "password": "New Password"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "invalid_auth": "Invalid authentication",
+            "unknown": "Unexpected error"
+        },
+        "abort": {
+            "already_configured": "Device is already configured",
+            "no_devices_found": "No Winkhaus devices found in network",
+            "reauth_successful": "Password successfully updated!"
         }
-      },
-      "pick": {
-        "title": "Select Device",
-        "data": {
-          "device": "Found Device"
-        }
-      },
-      "auth": {
-        "title": "Authentication",
-        "description": "Please enter the password for {serial_number}.",
-        "data": {
-          "username": "Username",
-          "password": "Password"
-        }
-      },
-      "manual": {
-        "title": "Manual Configuration",
-        "data": {
-          "serial_number": "Serial Number",
-          "ip_address": "IP Address",
-          "username": "Username",
-          "password": "Password"
-        }
-      },
-      "reauth_confirm": {
-        "title": "Update Password",
-        "description": "The password for user {username} is invalid. Please enter the new password.",
-        "data": {
-          "password": "New Password"
-        }
-      }
     },
-    "error": {
-      "cannot_connect": "Failed to connect",
-      "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error"
-    },
-    "abort": {
-      "already_configured": "Device is already configured",
-      "no_devices_found": "No Winkhaus devices found in network",
-	  "reauth_successful": "Password successfully updated!"
+    "options": {
+        "step": {
+            "init": {
+                "title": "Settings",
+                "description": "Update Interval",
+                "data": {
+                    "scan_interval": "Polling Interval (Seconds)"
+                },
+                "data_description": {
+                    "scan_interval": "Configure the polling interval (30-300s). Default is 60 seconds."
+                }
+
+            }
+        }
     }
-  }
 }
