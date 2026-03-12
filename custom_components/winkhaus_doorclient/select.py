@@ -22,20 +22,21 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     client = data["client"]
     coordinator = data["coordinator"]
-    async_add_entities([WinkhausModeSelect(coordinator, client, entry)])
+    device_info = data["device_info"]
+    
+    async_add_entities([WinkhausModeSelect(coordinator, client, entry, device_info)])
 
 class WinkhausModeSelect(CoordinatorEntity, SelectEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry, device_info: dict) -> None:
         super().__init__(coordinator)
         self._client = client
         self._attr_unique_id = f"{entry.data['serial_number']}_mode"
         self._attr_name = "Mode"
         self._attr_options = MODES
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.data['serial_number'])},
-        }
+        
+        self._attr_device_info = device_info
 
     @property
     def current_option(self) -> str | None:

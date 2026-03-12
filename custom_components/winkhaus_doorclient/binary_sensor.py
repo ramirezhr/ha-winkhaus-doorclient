@@ -23,24 +23,25 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     client = data["client"]
     coordinator = data["coordinator"]
-    async_add_entities([WinkhausDoorSensor(coordinator, client, entry)])
+    device_info = data["device_info"]
+    
+    async_add_entities([WinkhausDoorSensor(coordinator, client, entry, device_info)])
 
 class WinkhausDoorSensor(CoordinatorEntity, BinarySensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry, device_info: dict) -> None:
         super().__init__(coordinator)
         self._client = client
         self._attr_unique_id = f"{entry.data['serial_number']}_door_state"
         self._attr_name = "Door"
         self._attr_device_class = BinarySensorDeviceClass.DOOR
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.data['serial_number'])},
-        }
+        
+        self._attr_device_info = device_info
 
     @property
     def is_on(self) -> bool | None:
         if not self.coordinator.data:
             return None
         state_value = next((item['value'] for item in self.coordinator.data if item['name'] == 'state'), None)
-        return str(state_value).lower() == 'open'
+        return state_value == "open"

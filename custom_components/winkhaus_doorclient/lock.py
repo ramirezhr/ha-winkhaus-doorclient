@@ -23,7 +23,10 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     client = data["client"]
     coordinator = data["coordinator"]
-    async_add_entities([WinkhausLock(coordinator, client, entry)])
+    device_info = data["device_info"] 
+    
+    async_add_entities([WinkhausLock(coordinator, client, entry, device_info)])
+    
     platform = entity_platform.async_get_current_platform()
 
     platform.async_register_entity_service(
@@ -39,16 +42,12 @@ async def async_setup_entry(
 class WinkhausLock(CoordinatorEntity, LockEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry, device_info: dict) -> None:
         super().__init__(coordinator)
         self._client = client
         self._attr_unique_id = entry.data["serial_number"]
         self._attr_name = "Lock"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, self.unique_id)},
-            "name": f"Winkhaus Door ({entry.data['serial_number']})",
-            "manufacturer": "Winkhaus",
-        }
+        self._attr_device_info = device_info
         self._attr_supported_features = LockEntityFeature.OPEN
 
     @property
@@ -57,7 +56,6 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
             return None
         locked_state = next((item['value'] for item in self.coordinator.data if item['name'] == 'locked'), None)
         return str(locked_state).lower() == 'true'
-
 
     @property
     def extra_state_attributes(self) -> dict | None:
@@ -91,7 +89,7 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
             state = await self.hass.async_add_executor_job(self._client.get_system_state)
             _LOGGER.warning(f"SYSTEM STATE DUMP:\n{state}")
         except Exception as err:
-            _LOGGER.error(f"Fehler beim Systemstatus: {err}")
+            _LOGGER.error(f"Error fetching system state: {err}")
             
     async def async_lock(self, **kwargs) -> None:
         await self.hass.async_add_executor_job(self._client.execute_command, "night")
