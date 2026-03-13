@@ -116,13 +116,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         model_name = raw_model.replace("BM+", "blueMotion+ ").strip()
     else:
         model_name = raw_model
+
+    raw_firmware = sys_data.get("firmware", "Unknown")
+    if isinstance(raw_firmware, str) and "_" in raw_firmware:
+        parts = raw_firmware.split("_")
+        if len(parts) >= 2:
+            sw_version = f"{parts[0]} ({parts[1]})"
+        else:
+            sw_version = raw_firmware
+    else:
+        sw_version = raw_firmware
         
     device_info = {
         "identifiers": {(DOMAIN, serial)},
         "name": f"Winkhaus Door ({serial})",
         "manufacturer": "Winkhaus",
         "model": model_name,
-        "sw_version": sys_data.get("firmware", "Unknown"),
+        "sw_version": sw_version,
     }
 
     hass.data[DOMAIN][entry.entry_id] = {
