@@ -41,6 +41,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             
             if consecutive_failures > 0:
                 _LOGGER.info(f"[COORDINATOR {serial}] Connection restored after {consecutive_failures} failures")
+                
+                hass.components.persistent_notification.async_dismiss(
+                notification_id=f"winkhaus_{serial}_offline"
+                )
+                
                 consecutive_failures = 0
             
             return new_data
@@ -65,6 +70,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     _LOGGER.error(
                         f"[COORDINATOR {serial}] {consecutive_failures} consecutive failures! "
                         f"Device may be offline or unreachable."
+                    )
+                
+                    hass.components.persistent_notification.async_create(
+                        title="⚠️ Winkhaus Door Connection Issue",
+                        message=(
+                            f"Your Winkhaus door ({serial}) has been unreachable for "
+                            f"{consecutive_failures} consecutive updates (≈{consecutive_failures} minutes).\n\n"
+                            f"Please check:\n"
+                            f"• Is the device powered on?\n"
+                            f"• Is the network connection stable?\n"
+                            f"• Can you ping the device from Home Assistant?"
+                        ),
+                        notification_id=f"winkhaus_{serial}_offline"
                     )
                 
                 return coordinator.data
@@ -109,8 +127,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error(f"[COORDINATOR {serial}] Failed to set up device: {err}")
         return False
 
-    raw_sys_data = system_coordinator.data or {}
-    sys_data = raw_sys_data.get("XC_SUC", raw_sys_data)
+    sys_data = system_coordinator.data or {}
     raw_model = sys_data.get("version", "Winkhaus Door")
     if isinstance(raw_model, str) and "BM+" in raw_model:
         model_name = raw_model.replace("BM+", "blueMotion+ ").strip()

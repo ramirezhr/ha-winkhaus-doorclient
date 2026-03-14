@@ -44,4 +44,4 @@ class WinkhausDoorSensor(CoordinatorEntity, BinarySensorEntity):
         if not self.coordinator.data:
             return None
         state_value = next((item['value'] for item in self.coordinator.data if item['name'] == 'state'), None)
-        return state_value == "open"
+        return str(state_value).lower() == "open"

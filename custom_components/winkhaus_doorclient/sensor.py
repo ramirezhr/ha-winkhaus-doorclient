@@ -41,10 +41,7 @@ class WinkhausSystemSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data:
             return None
         
-        raw_data = self.coordinator.data
-        sys_data = raw_data.get("XC_SUC", raw_data)
-        
-        return sys_data.get(self._key)
+        return self.coordinator.data.get(self._key)
 
 class WinkhausLockCountSensor(WinkhausSystemSensor):
     def __init__(self, coordinator, entry, device_info):
