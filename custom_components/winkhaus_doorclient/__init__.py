@@ -2,14 +2,14 @@
 
 from datetime import timedelta
 import logging
-
+import asyncio
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from .api import DoorClient
-from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, CONF_UPDATE_MODE, MODE_HYBRID, MODE_POLLING
 
 PLATFORMS = ["lock", "select", "binary_sensor", "sensor"]
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +27,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             username=entry.data[CONF_USERNAME]
         )
     )
-
+    
+    update_mode = entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID)
+    
+    if update_mode == MODE_HYBRID:
+        scan_interval_seconds = 120
+        _LOGGER.info(f"[{serial}] Starte im HYBRID-Modus (WebSockets aktiv)")
+    else:
+        scan_interval_seconds = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        _LOGGER.info(f"[{serial}] Starte im POLLING-Modus (Intervall: {scan_interval_seconds}s)")
+    
     consecutive_failures = 0
     MAX_FAILURES_BEFORE_ALERT = 3
 
@@ -92,16 +101,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             raise UpdateFailed(f"Failed to communicate with device: {error_type}") from err
 
-    coordinator_name = f"{DOMAIN}_{serial}"
-    scan_interval_seconds = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name=coordinator_name,
-        update_method=async_update_data,
-        update_interval=timedelta(seconds=scan_interval_seconds),
-    )
 
     async def async_update_system_data():
         _LOGGER.debug(f"[SYSTEM COORDINATOR {serial}] Loading system status (12h interval)...")
@@ -109,6 +108,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return await hass.async_add_executor_job(client.get_system_state)
         except Exception as err:
             raise UpdateFailed(f"Error fetching system state: {err}") from err
+            
+    coordinator_name = f"{DOMAIN}_{serial}"
+    
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=f"{DOMAIN}_{serial}",
+        update_method=async_update_data,
+        update_interval=timedelta(seconds=scan_interval_seconds),
+    )
 
     system_coordinator = DataUpdateCoordinator(
         hass,
@@ -119,13 +128,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     try:
+        _LOGGER.debug(f"[{serial}] Initialer HTTP-Refresh gestartet...")
         await coordinator.async_config_entry_first_refresh()
         await system_coordinator.async_config_entry_first_refresh()
     except ConfigEntryAuthFailed:
         raise
-    except UpdateFailed as err:
-        _LOGGER.error(f"[COORDINATOR {serial}] Failed to set up device: {err}")
-        return False
+    except Exception as err:
+        _LOGGER.error(f"[COORDINATOR {serial}] Initialer Start fehlgeschlagen: {err}")
+        if coordinator.data is None:
+            _LOGGER.error(f"[COORDINATOR {serial}] Keine Cached-Daten verfügbar. Abbruch.")
+            return False
+            
+    def handle_state_change(new_states):
+        _LOGGER.debug(f"[PUSH {serial}] Sofortiges Update empfangen: {new_states}")
+        coordinator.async_set_updated_data(new_states)
+
+    client.on_state_change = handle_state_change
+
+    if update_mode == MODE_HYBRID:
+        async def start_ws_delayed():
+            await asyncio.sleep(2)
+            _LOGGER.debug(f"[WS PUSH {serial}] Starte WebSocket Überwachung...")
+            await client.connect_and_monitor()
+
+        entry.async_create_background_task(
+            hass, 
+            start_ws_delayed(), 
+            name=f"winkhaus_ws_{serial}"
+        )  
+
 
     sys_data = system_coordinator.data or {}
     raw_model = sys_data.get("version", "Winkhaus Door")
@@ -172,7 +203,18 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
     
+    if unload_ok:
+        entry_data = hass.data[DOMAIN].get(entry.entry_id)
+        
+        if entry_data and "client" in entry_data:
+            _LOGGER.debug(f"Trenne aktive Verbindungen (WebSocket/Watchdog) für {entry.entry_id}...")
+            await entry_data["client"].stop()
+            
+            _LOGGER.debug("Warte 2 Sekunden, damit das Schloss Sockets freigeben kann...")
+            await asyncio.sleep(2)
+            # ------------------------------------------
+
+        hass.data[DOMAIN].pop(entry.entry_id)
+        
     return unload_ok

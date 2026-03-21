@@ -53,15 +53,21 @@
     "options": {
         "step": {
             "init": {
-                "title": "Settings",
-                "description": "Update Interval",
+                "title": "Connection Mode",
+                "description": "Choose how the integration should communicate with the door.",
+                "data": {
+                    "update_mode": "Mode"
+                }
+            },
+            "polling": {
+                "title": "Polling Settings",
+                "description": "Configure the manual polling interval.",
                 "data": {
                     "scan_interval": "Polling Interval (Seconds)"
                 },
                 "data_description": {
                     "scan_interval": "Configure the polling interval (30-300s). Default is 60 seconds."
                 }
-
             }
         }
     }

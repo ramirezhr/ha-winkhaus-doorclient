@@ -9,6 +9,9 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
 )
 from zeroconf import ServiceBrowser
 import requests
@@ -16,7 +19,14 @@ import logging
 import asyncio
 import socket
 
-from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+from .const import (
+    DOMAIN, 
+    CONF_SCAN_INTERVAL, 
+    DEFAULT_SCAN_INTERVAL,
+    CONF_UPDATE_MODE,
+    MODE_HYBRID,
+    MODE_POLLING
+)
 from .api import DoorClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -264,22 +274,45 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry):
-        self.entry_saved = config_entry
+        # Wir nutzen self._entry statt self.config_entry (HA-intern geschützt)
+        self._entry = config_entry
+        self.options = dict(config_entry.options)
 
     async def async_step_init(self, user_input=None):
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            self.options.update(user_input)
+            if user_input[CONF_UPDATE_MODE] == MODE_POLLING:
+                return await self.async_step_polling()
+            
+            return self.async_create_entry(title="", data=self.options)
 
-        current_interval = self.entry_saved.options.get(
-            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-        )
-
-
-        if current_interval < 30:
-            current_interval = 30
+        current_mode = self.options.get(CONF_UPDATE_MODE, MODE_HYBRID)
 
         return self.async_show_form(
             step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(CONF_UPDATE_MODE, default=current_mode): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            {"value": MODE_HYBRID, "label": "Hybrid (WebSockets + Fallback)"},
+                            {"value": MODE_POLLING, "label": "Classic Polling (HTTP only)"}
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN
+                    )
+                )
+            })
+        )
+
+    async def async_step_polling(self, user_input=None):
+        if user_input is not None:
+            self.options.update(user_input)
+            return self.async_create_entry(title="", data=self.options)
+
+        current_interval = self.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        if current_interval < 30: current_interval = 30
+
+        return self.async_show_form(
+            step_id="polling",
             data_schema=vol.Schema({
                 vol.Required(
                     CONF_SCAN_INTERVAL, 
@@ -291,5 +324,5 @@ class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
                     mode=NumberSelectorMode.SLIDER,
                     unit_of_measurement="s"
                 )),
-            }),
+            })
         )

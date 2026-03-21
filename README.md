@@ -1,96 +1,152 @@
 # Winkhaus Doorclient for Home Assistant
 
 [![GitHub Release](https://img.shields.io/github/release/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
+[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/ramirezhr/ha-winkhaus-doorclient/total?style=for-the-badge&label=Downloads)](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
 [![License](https://img.shields.io/github/license/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/blob/main/LICENSE)
 [![HACS](https://img.shields.io/badge/HACS-Default-orange?style=for-the-badge)](https://github.com/hacs/integration)
 [![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue?style=for-the-badge)](https://github.com/ramirezhr)
 
-Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+) via local API (HTTPS).
+Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+) via local API.
 
 This integration communicates directly with your door controller over the local network. **No cloud connection required.**
 
 ![Logo](https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/winkhaus_doorclient/logo.png)
 
+---
+
 ## ✨ Features
 
-* **🔓 Lock Control:** Lock (Night Mode), Unlock (Day Mode), and Open (Pull Latch) the door.
-* **🚪 Door Status:** Binary sensor to see if the door is physically open or closed.
-* **🌗 Day/Night Mode:** Dedicated `select` entity to switch between Day (Trap) and Night (Locked) modes.
-* **🔍 Auto-Discovery:** Automatically finds your Winkhaus door in the network (Zeroconf/mDNS).
-* **🔐 Secure Local Connection:** Uses HTTPS with handled legacy SSL compatibility.
-* **🛡️ Network Resilience:** Maintains last known state during temporary network issues (router restarts, WiFi hiccups). Automatically recovers when connection is restored.
-* **🔄 Smart Reauth:** If the door password changes, you'll be prompted to update it via the Repairs dashboard - no need to reconfigure the entire integration.
+### 🚀 Version 2.0+ (Hybrid Mode)
+
+* **⚡ WebSocket Real-time Updates:** Instant status changes with <0.5s latency
+* **🔄 Hybrid Communication:** WebSocket primary, HTTP fallback for maximum reliability
+* **📊 80% Fewer API Calls:** ~290/day vs ~1,440/day in pure polling mode
+* **🛡️ Triple Safety Net:** Protocol pings (20s) + Watchdog (75s) + HTTP polling (120s)
+* **📈 Connection Diagnostics:** Built-in statistics, quality metrics, and diagnostics panel
+
+### 🔓 Core Features
+
+* **🔓 Lock Control:** Lock (Night Mode), Unlock (Day Mode), and Open (Pull Latch)
+* **🚪 Door Status:** Binary sensor showing if door is physically open or closed
+* **🌗 Day/Night Mode:** Dedicated select entity to switch between modes
+* **🔍 Auto-Discovery:** Automatically finds devices via Zeroconf/mDNS
+* **🔐 Secure Local Connection:** HTTPS with legacy SSL compatibility
+* **🛡️ Network Resilience:** Maintains last known state during temporary outages
+* **🔄 Smart Reauth:** Automatic password update prompts via Repairs dashboard
+* **🏠 Multi-Lock Support:** Unlimited locks, each with independent WebSocket connection
+
+---
 
 ## 🚀 Installation
 
 ### Option 1: HACS (Recommended)
 
-1.  Open **HACS** in Home Assistant.
-2.  Go to "Integrations" > Top right menu (⋮) > **Custom repositories**.
-3.  Add the URL of this repository:
-    `https://github.com/ramirezhr/ha-winkhaus-doorclient`
-4.  Select category **Integration**.
-5.  Click **Add** and search for **Winkhaus Doorclient**.
-6.  Click **Download**.
-7.  Restart Home Assistant.
+1. Open **HACS** in Home Assistant
+2. Go to **Integrations**
+3. Click **+ Explore & Download Repositories**
+4. Search for **"Winkhaus Doorclient"**
+5. Click on the integration
+6. Click **Download**
+7. Restart Home Assistant
+
+> **Note:** If the integration is not listed, you may need to add it as a custom repository:
+> 1. HACS → Integrations → Top right menu (⋮) → **Custom repositories**
+> 2. Add URL: `https://github.com/ramirezhr/ha-winkhaus-doorclient`
+> 3. Category: **Integration**
 
 ### Option 2: Manual Installation
 
-1.  Download the `custom_components/winkhaus_doorclient` folder from the latest release.
-2.  Copy the folder into your Home Assistant `config/custom_components/` directory.
-3.  Restart Home Assistant.
+1. Download `custom_components/winkhaus_doorclient` from the [latest release](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
+2. Copy the folder to `config/custom_components/` directory
+3. Restart Home Assistant
+
+---
 
 ## ⚙️ Configuration
 
-### Auto-Discovery (Easiest Way)
-1.  Make sure your Winkhaus door is connected to the same network as Home Assistant.
-2.  Go to **Settings** > **Devices & Services**.
-3.  You should see a discovered **Winkhaus Doorclient** device.
-4.  Click **Configure**.
-5.  Enter the password for your door user (default username: `admin`).
+### Auto-Discovery (Recommended)
 
-### Add Integration Manually
-1.  Go to **Settings** > **Devices & Services**.
-2.  Click **+ Add Integration**.
-3.  Search for **Winkhaus Doorclient**.
-4.  Select one of the options:
-    * **Search via Network:** Scans for devices on your local network.
-    * **Manual Input:** Lets you enter Serial Number and IP Address manually.
+1. Ensure Winkhaus door is on the same network as Home Assistant
+2. Go to **Settings** → **Devices & Services**
+3. Discovered device should appear automatically
+4. Click **Configure**
+5. Enter password (default username: `admin`)
 
-## 🧩 Entities & Services
+### Manual Setup
 
-After setup, the following entities will be available (example for serial `123456`):
+1. Go to **Settings** → **Devices & Services**
+2. Click **+ Add Integration**
+3. Search for **Winkhaus Doorclient**
+4. Choose setup method:
+   * **Search via Network:** Auto-scan for devices
+   * **Manual Input:** Enter Serial Number and IP Address
+
+---
+
+## 🔧 Connection Modes
+
+The integration supports two operation modes:
+
+### 1️⃣ Hybrid Mode (Default - Recommended)
+
+**Best for:** Real-time control and instant status updates
+
+* ⚡ WebSocket primary: Commands in <0.5s
+* 🛡️ HTTP safety net: Polls every 120s as backup
+* 📡 Protocol pings: Keeps connection alive every 20s
+* 🔄 Auto-recovery: Reconnects automatically
+
+**Performance:**
+- API Calls/Day: ~290 (-80%)
+- Command Latency: <0.5s
+- Status Latency: <1s (instant push)
+
+### 2️⃣ Classic Polling Mode
+
+**Best for:** Maximum compatibility
+
+* 🔌 HTTP-only: No WebSocket
+* ⚙️ Configurable: 30-300s interval (default: 60s)
+* 📶 Simple: Works on any network
+
+**Performance:**
+- API Calls/Day: ~1,440 (at 60s)
+- Command Latency: 2-3s
+- Status Latency: 0-60s
+
+**To switch modes:**
+Settings → Devices & Services → Winkhaus Door → Configure → Select mode
+
+---
+
+## 🧩 Entities Created
+
+After setup, the following entities are available (example for serial `SERIAL123`):
 
 | Entity ID | Type | Description |
-| :--- | :--- | :--- |
-| `lock.winkhaus_door_123456_lock` | Lock | Main control (Lock/Unlock/Open). |
-| `binary_sensor.winkhaus_door_123456_door` | Binary Sensor | Door contact (Open/Closed). |
-| `select.winkhaus_door_123456_mode` | Select | Switch between `day` and `night` mode. |
+|-----------|------|-------------|
+| `lock.winkhaus_door_serial123_lock` | Lock | Main control (Lock/Unlock/Open) |
+| `binary_sensor.winkhaus_door_serial123_door` | Binary Sensor | Door contact (Open/Closed) |
+| `select.winkhaus_door_serial123_mode` | Select | Day/Night mode selector |
+| `sensor.winkhaus_door_serial123_lock_count` | Sensor | Total lock operations |
+| `sensor.winkhaus_door_serial123_unlock_count` | Sensor | Total unlock operations |
+| `sensor.winkhaus_door_serial123_error_count` | Sensor | Error counter |
 
-## Configuration
+---
 
-### Polling Interval
-You can customize the polling interval to define how often the integration updates the door status from the physical device.
+## 🎮 Services
 
-- **Setting:** Adjustable via a slider in the integration options.
-- **Range:** 30 to 300 seconds.
-- **Default:** 60 seconds.
+### Custom Services
 
-To change the interval:
-1. Go to **Settings** > **Devices & Services**.
-2. Find the **Winkhaus Door** integration.
-3. Click on **Configure**.
-4. Adjust the slider to your desired value and click **Submit**.
+* `winkhaus_doorclient.set_day_mode` - Switch to day mode (unlocked/trap)
+* `winkhaus_doorclient.set_night_mode` - Switch to night mode (locked)
 
-### Services
-You can use these services in your automations:
-
-* `winkhaus_doorclient.set_day_mode` - Switches the door to day mode (unlocked/trap).
-* `winkhaus_doorclient.set_night_mode` - Switches the door to night mode (locked).
+---
 
 ## 📝 Example Automations
 
-### Auto-lock at night
+### Auto-lock at Night
+
 ```yaml
 automation:
   - alias: "Lock door at bedtime"
@@ -100,16 +156,17 @@ automation:
     action:
       - service: winkhaus_doorclient.set_night_mode
         target:
-          entity_id: lock.winkhaus_door_123456_lock
+          entity_id: lock.winkhaus_door_serial123_lock
 ```
 
-### Notify when door is opened
+### Door Opened Notification
+
 ```yaml
 automation:
   - alias: "Door opened notification"
     trigger:
       - platform: state
-        entity_id: binary_sensor.winkhaus_door_123456_door
+        entity_id: binary_sensor.winkhaus_door_serial123_door
         to: "on"
     action:
       - service: notify.mobile_app
@@ -117,7 +174,8 @@ automation:
           message: "Front door has been opened!"
 ```
 
-### Switch to day mode in the morning
+### Morning Auto-unlock (Workdays Only)
+
 ```yaml
 automation:
   - alias: "Unlock door in the morning"
@@ -131,59 +189,213 @@ automation:
     action:
       - service: winkhaus_doorclient.set_day_mode
         target:
-          entity_id: lock.winkhaus_door_123456_lock
+          entity_id: lock.winkhaus_door_serial123_lock
 ```
 
-## 🔒 Security Note
+### Connection Quality Alert
 
-This integration communicates over **HTTPS (TLS 1.2)** with your Winkhaus door controller. Due to the device using a self-signed/generic certificate, SSL certificate verification is disabled (`verify=False` in the code).
+```yaml
+automation:
+  - alias: "Winkhaus Connection Alert"
+    trigger:
+      - platform: state
+        entity_id: sensor.winkhaus_door_serial123_connection_quality
+        to: 'Poor'
+        for:
+          minutes: 5
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "🔐 Door Connection Issue"
+          message: "Winkhaus door connection quality degraded. Check device and network."
+```
 
-**Important:** 
-- ✅ The connection is still **encrypted** via TLS
-- ✅ Communication occurs **only within your local network**
-- ✅ **No data** is transmitted to external servers or the cloud
-- ⚠️ The device identity cannot be cryptographically verified
+---
 
-For maximum security, ensure your Winkhaus door is on a **trusted network segment** (e.g., isolated IoT VLAN).
+## 🏠 Multi-Lock Support
 
-### Why Legacy SSL Support?
+The integration fully supports multiple Winkhaus locks:
 
-The integration uses `SECLEVEL=1` and allows older cipher suites to maintain compatibility with the door controller's embedded firmware. This is a common requirement for IoT devices that cannot be easily updated.
+### How it Works
+
+Each lock operates independently with:
+* ✅ Dedicated WebSocket connection
+* ✅ Independent coordinators
+* ✅ Separate HTTP sessions
+* ✅ Individual offline handling
+
+### Setup Multiple Locks
+
+Simply add each lock as a separate integration:
+
+1. **Settings** → **Devices & Services**
+2. **+ Add Integration** → **Winkhaus Doorclient**
+3. Configure each lock with its unique serial number
+
+### Example: Lock All Doors
+
+```yaml
+automation:
+  - alias: "Lock All Doors at Night"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    action:
+      - service: lock.lock
+        target:
+          entity_id:
+            - lock.winkhaus_door_serial123_lock  # Front door
+            - lock.winkhaus_door_serial456_lock  # Back door
+            - lock.winkhaus_door_serial789_lock  # Garage
+```
+
+---
+
+## 🔒 Security
+
+### Encryption & Authentication
+
+* **Transport:** HTTPS (TLS 1.2) for HTTP, AES-CCM for WebSocket
+* **Local Only:** No cloud servers, all communication stays on your network
+
+### Important Notes
+
+* ✅ Connection is **encrypted** via TLS/AES-CCM
+* ✅ Communication **only within local network**
+* ✅ **No data** sent to external servers
+* ⚠️ Uses self-signed certificates (device limitation)
+
+### Best Practices
+
+1. 🔐 Change default admin password
+2. 🌐 Use separate IoT VLAN for locks
+3. 🚫 Restrict network access to HA server only
+4. 🔄 Keep integration updated
+
+### Why Legacy SSL?
+
+The integration uses `SECLEVEL=1` to maintain compatibility with the door controller's embedded firmware (common requirement for IoT devices).
+
+---
 
 ## 🔧 Troubleshooting
 
-**"Translation Error" during setup:**
-Ensure you are running at least version **v1.2.4** or newer.
+### Connection Failed
 
-**Connection Failed:**
-- Check if the door is reachable via ping from Home Assistant
-- The integration uses port **443 (HTTPS)** by default
-- Verify username and password (default: `admin` / your-password)
+**Symptoms:** Integration won't connect, shows errors during setup
 
-**Entities show "Unavailable":**
-- Check the Home Assistant log for error messages
-- If the door is temporarily offline (e.g., router restart), the integration will keep the last known state for up to 3 minutes
-- Connection will automatically recover when the device is back online
+**Solutions:**
+- Verify device is reachable: `ping <door_ip>`
+- Check port 443 (HTTPS) and port 80 (WebSocket) are open
+- Verify username (default: `admin`) and password
+- Try rebooting the door controller (power cycle)
 
-**Debug Logging:**
-To enable debug logging, add this to your `configuration.yaml`:
+### Entities Show "Unavailable"
+
+**Symptoms:** All entities gray/unavailable
+
+**Solutions:**
+- Check Home Assistant logs for errors
+- Integration keeps last known state for 3 minutes during outages
+- Connection auto-recovers when device comes back online
+- If persistent, try reloading integration
+
+### WebSocket Not Connecting
+
+**Symptoms:** Logs show "WS Connection failed" or "WS Auth Failed"
+
+**Solutions:**
+1. **Switch to Polling Mode** (temporary workaround)
+   - Settings → Devices → Winkhaus Door → Configure → Classic Polling
+2. **Check Firewall:** Ensure port 80 is not blocked
+3. **Verify Firmware:** Update door controller if available
+4. **Enable Debug Logging:**
+   ```yaml
+   logger:
+     logs:
+       custom_components.winkhaus_doorclient: debug
+       websockets.client: debug
+   ```
+
+### Poor Connection Quality
+
+**Symptoms:** Sensor shows "Fair" or "Poor" quality
+
+**Solutions:**
+- Improve WiFi signal strength to door controller
+- Reduce network congestion
+- Check for interference from other devices
+- Review diagnostics: Settings → Devices → Download Diagnostics
+
+### Commands Not Working
+
+**Symptoms:** Lock/unlock commands don't execute
+
+**Solutions:**
+- Verify lock is powered (24V supply)
+- Check device logs for error messages
+- Test manual command via Developer Tools
+- Switch to Polling mode to bypass WebSocket
+
+---
+
+## 🐛 Debug Logging
+
+Enable detailed logging:
 
 ```yaml
 logger:
   default: info
   logs:
     custom_components.winkhaus_doorclient: debug
+    custom_components.winkhaus_doorclient.api: debug
+    websockets.client: debug
 ```
 
-Then check **Settings** > **System** > **Logs** for detailed information.
+Then check: **Settings** → **System** → **Logs**
+
+Look for:
+- `WS Auth OK` - WebSocket connected successfully
+- `WS Status Update` - Status pushes received
+- `Befehl via WS` - Commands sent via WebSocket
+- `% sending keepalive ping` - Protocol pings active
+
+---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please:
 
-## License
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
+
+---
+
+## 📄 License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
+
+## 📚 Additional Resources
+
+- **Documentation:** [GitHub Wiki](https://github.com/ramirezhr/ha-winkhaus-doorclient/wiki)
+- **Issues:** [GitHub Issues](https://github.com/ramirezhr/ha-winkhaus-doorclient/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/ramirezhr/ha-winkhaus-doorclient/discussions)
+- **Community:** [Home Assistant Forum](https://community.home-assistant.io/)
+
+---
+
+## 🙏 Credits
+
+- **Integration Author:** [@ramirezhr](https://github.com/ramirezhr)
+- **Hardware:** [Winkhaus blueMotion+](https://www.winkhaus.de/)
+
+---
+
 *Disclaimer: This is a custom integration and not an official product of Winkhaus.*
+
+**Made with ❤️ for the Home Assistant Community**

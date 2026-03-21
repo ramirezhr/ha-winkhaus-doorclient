@@ -51,6 +51,4 @@ class WinkhausModeSelect(CoordinatorEntity, SelectEntity):
         return "mdi:weather-sunny"      # Sonnen-Icon
 
     async def async_select_option(self, option: str) -> None:
-        await self.hass.async_add_executor_job(self._client.execute_command, "mode", option)
-        await asyncio.sleep(2)
-        await self.coordinator.async_request_refresh()
+        await self._client.async_execute_command("mode", option)

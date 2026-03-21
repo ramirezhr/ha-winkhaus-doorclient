@@ -56,10 +56,17 @@
     "options": {
         "step": {
             "init": {
-                "title": "Einstellungen",
-                "description": "Update Intervall",
+                "title": "Verbindungsmodus",
+                "description": "Wähle aus, wie die Integration mit dem Schloss kommunizieren soll.",
                 "data": {
-                    "scan_interval": "Abfrage Intervall (Sekunden)"
+                    "update_mode": "Modus"
+                }
+            },
+            "polling": {
+                "title": "Polling-Einstellungen",
+                "description": "Konfiguriere das manuelle Abfrage-Intervall.",
+                "data": {
+                    "scan_interval": "Abfrage-Intervall (Sekunden)"
                 },
                 "data_description": {
                     "scan_interval": "Hier kannst du das Abfrage-Intervall (30-300s) anpassen. Standard sind 60 Sekunden."
