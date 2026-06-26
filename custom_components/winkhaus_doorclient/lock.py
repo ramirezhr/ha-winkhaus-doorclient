@@ -2,7 +2,7 @@
 
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from homeassistant.components.lock import LockEntity, LockEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -63,6 +63,8 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
             return None
         
         attributes = {}
+        
+        # Add standard state attributes
         for item in self.coordinator.data:
             key = item["name"]
             value = item["value"]
@@ -71,6 +73,25 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
                 attributes["last_update_from_device"] = datetime.fromtimestamp(value).isoformat()
             elif key not in ["time"]:
                 attributes[key] = value
+        
+        # --- ADD CONNECTION TRACKING ATTRIBUTES ---
+        # WebSocket connection status
+        attributes["websocket_connected"] = self._client.ws_connected
+        
+        # Connection count
+        attributes["connection_count"] = self._client.connection_count
+        
+        # Current session uptime
+        uptime_seconds = self._client.get_current_uptime()
+        if uptime_seconds > 0:
+            # Format as human-readable
+            uptime_delta = timedelta(seconds=int(uptime_seconds))
+            attributes["current_uptime"] = str(uptime_delta)
+            attributes["current_uptime_seconds"] = round(uptime_seconds, 1)
+        else:
+            attributes["current_uptime"] = "Not connected"
+            attributes["current_uptime_seconds"] = 0
+        # -------------------------------------------
 
         return attributes
     

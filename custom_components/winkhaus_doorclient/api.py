@@ -77,6 +77,18 @@ class DoorClient:
         self._watchdog_task: Optional[asyncio.Task] = None
         self._monitor_running = False
         
+        # --- SIMPLE CONNECTION TRACKING ---
+        self.connection_count = 0  # Total number of connections made
+        self.current_session_start = None  # When current session started (timestamp)
+        # ------------------------------------
+
+    # --- SIMPLE TRACKING METHODS ---
+    def get_current_uptime(self) -> float:
+        """Get current session uptime in seconds."""
+        if self.current_session_start:
+            return time.time() - self.current_session_start
+        return 0.0
+    # --------------------------------
 
     # --- KRYPTO-HELPER ---
     def _get_pbdf2_key(self) -> bytes:
@@ -258,6 +270,8 @@ class DoorClient:
             _LOGGER.warning("WS Connection closed.")
             self.ws_connected = False
             self._active_ws = None
+            # --- Track disconnect ---
+            self.current_session_start = None
         finally:
             if self._watchdog_task: self._watchdog_task.cancel()
 
@@ -273,6 +287,8 @@ class DoorClient:
                 pass
             self.ws_connected = False
             self._active_ws = None
+            # --- Track disconnect ---
+            self.current_session_start = None
             
         try:
             self.session.close()
@@ -313,6 +329,15 @@ class DoorClient:
                         _LOGGER.info("WS Auth OK. Connection established.")
                         self.ws_connected = True
                         self._active_ws = ws
+                        
+                        # --- Track successful connection ---
+                        self.connection_count += 1
+                        self.current_session_start = time.time()
+                        _LOGGER.info(
+                            f"[{self.serial_number}] WS Connection #{self.connection_count} established."
+                        )
+                        # ------------------------------------
+                        
                         _LOGGER.info("Sending initial status request after successful handshake...")
                         await self.async_send_payload("/api/v1/getStates", {})
                         # -----------------------------
@@ -323,4 +348,6 @@ class DoorClient:
                 _LOGGER.error(f"WS Error: {e}. Retrying in 5s...")
                 self.ws_connected = False
                 self._active_ws = None
+                # --- Track disconnect ---
+                self.current_session_start = None
                 await asyncio.sleep(5)

@@ -2,12 +2,14 @@
 
 import logging
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.const import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import EntityCategory
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_UPDATE_MODE, MODE_HYBRID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,12 +20,15 @@ async def async_setup_entry(
 ) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     system_coordinator = data["system_coordinator"]
+    coordinator = data["coordinator"]
     device_info = data["device_info"] 
 
     async_add_entities([
         WinkhausLockCountSensor(system_coordinator, entry, device_info),
         WinkhausUnlockCountSensor(system_coordinator, entry, device_info),
         WinkhausErrorCountSensor(system_coordinator, entry, device_info),
+        WinkhausConnectionModeSensor(entry, device_info),
+        WinkhausErrorStateSensor(coordinator, entry, device_info),
     ])
 
 class WinkhausSystemSensor(CoordinatorEntity, SensorEntity):
@@ -60,3 +65,58 @@ class WinkhausErrorCountSensor(WinkhausSystemSensor):
         super().__init__(coordinator, entry, device_info, "error_cnt", "Error Count")
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_icon = "mdi:alert-circle-outline"
+
+class WinkhausConnectionModeSensor(SensorEntity):
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, entry: ConfigEntry, device_info: dict) -> None:
+        self._entry = entry
+        self._attr_device_info = device_info
+        self._attr_unique_id = f"{entry.data['serial_number']}_connection_mode"
+        self._attr_name = "Connection Mode"
+
+    @property
+    def native_value(self):
+        mode = self._entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID)
+        return "Hybrid" if mode == MODE_HYBRID else "Polling"
+
+    @property
+    def icon(self):
+        mode = self._entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID)
+        return "mdi:lan-connect" if mode == MODE_HYBRID else "mdi:cached"
+
+class WinkhausErrorStateSensor(CoordinatorEntity, SensorEntity):
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, entry: ConfigEntry, device_info: dict) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.data['serial_number']}_error_state"
+        self._attr_name = "Error State"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:alert-circle-outline"
+        self._attr_device_info = device_info
+        
+        # Für die Übersetzungen später wichtig:
+        self._attr_translation_key = "error_state" 
+
+    @property
+    def native_value(self) -> str | None:
+        if not self.coordinator.data:
+            return None
+        
+        # Da dein api.py die Liste von dicts baut [{'name': 'locked', 'value': False}, ...]
+        error_data = next((item['value'] for item in self.coordinator.data if item['name'] == 'error'), None)
+        
+        # Wenn der Key nicht existiert oder die Liste leer ist -> "none"
+        if not error_data:
+            return "none"
+        
+        # Falls es eine Liste ist (z.B. ["overcurrent"]), als String verbinden
+        if isinstance(error_data, list) and len(error_data) > 0:
+            return ", ".join(error_data)
+            
+        return str(error_data)
+
+
+

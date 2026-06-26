@@ -70,5 +70,16 @@
                 }
             }
         }
+    },
+    "entity": {
+        "sensor": {
+            "error_state": {
+                "name": "Error State",
+                "state": {
+                    "none": "No Error",
+                    "overcurrent": "Overcurrent"
+                }
+            }
+        }
     }
 }

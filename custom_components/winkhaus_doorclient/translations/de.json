@@ -73,5 +73,16 @@
                 }
             }
         }
+    },
+    "entity": {
+        "sensor": {
+            "error_state": {
+                "name": "Fehlerstatus",
+                "state": {
+                    "none": "Kein Fehler",
+                    "overcurrent": "Überstrom"
+                }
+            }
+        }
     }
 }
