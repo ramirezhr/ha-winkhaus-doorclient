@@ -1,7 +1,6 @@
 # Winkhaus Doorclient for Home Assistant
 
 [![GitHub Release](https://img.shields.io/github/release/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
-[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/ramirezhr/ha-winkhaus-doorclient/total?style=for-the-badge&label=Downloads)](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
 [![License](https://img.shields.io/github/license/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/blob/main/LICENSE)
 [![HACS](https://img.shields.io/badge/HACS-Default-orange?style=for-the-badge)](https://github.com/hacs/integration)
 [![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue?style=for-the-badge)](https://github.com/ramirezhr)
