@@ -11,7 +11,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from .api import DoorClient
 from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, CONF_UPDATE_MODE, MODE_HYBRID, MODE_POLLING
 
-PLATFORMS = ["lock", "select", "binary_sensor", "sensor"]
+PLATFORMS = ["lock", "select", "binary_sensor", "sensor", "button"]
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -159,11 +159,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
     sys_data = system_coordinator.data or {}
-    raw_model = sys_data.get("version", "Winkhaus Door")
-    if isinstance(raw_model, str) and "BM+" in raw_model:
-        model_name = raw_model.replace("BM+", "blueMotion+ ").strip()
+    
+    if serial.startswith("WH_01"):
+        model_name = "EAV4+"
     else:
-        model_name = raw_model
+        model_name = "blueMotion+"
 
     raw_firmware = sys_data.get("firmware", "Unknown")
     if isinstance(raw_firmware, str) and "_" in raw_firmware:

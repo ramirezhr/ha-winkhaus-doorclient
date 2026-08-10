@@ -80,8 +80,15 @@
                 "name": "Fehlerstatus",
                 "state": {
                     "none": "Kein Fehler",
-                    "overcurrent": "Überstrom"
+                    "overcurrent": "Überstrom",
+					"blocked": "Motor blockiert",
+                    "batterylow": "Batterie schwach"
                 }
+            }
+        },
+		"button": {
+            "clear_errors": {
+                "name": "Fehler zurücksetzen"
             }
         }
     }

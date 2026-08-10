@@ -77,8 +77,15 @@
                 "name": "Error State",
                 "state": {
                     "none": "No Error",
-                    "overcurrent": "Overcurrent"
+                    "overcurrent": "Overcurrent",
+					"blocked": "Motor Blocked",
+                    "batterylow": "Low Battery"
                 }
+            }
+        },
+		"button": {
+            "clear_errors": {
+                "name": "Clear Errors"
             }
         }
     }

@@ -15,7 +15,7 @@ from urllib3.poolmanager import PoolManager
 from urllib3.util import ssl_
 from typing import Optional, Dict, Any, List, Callable
 
-# Kryptographie
+# Cryptography
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.hmac import HMAC
@@ -32,6 +32,19 @@ WINKHAUS_STATUS_MAP = {
     "state": ["open", "closed"],
     "mode": ["day", "night"]
 }
+
+# Mapping from Home Assistant intent to the lock's own command vocabulary.
+# The device itself only understands: "day", "night", "unlock".
+# Note: "open" maps to "unlock" because on this device "unlock" pulls the latch.
+COMMAND_MAP = {
+    "lock":   "night",
+    "unlock": "day",
+    "night":  "night",
+    "day":    "day",
+    "open":   "unlock",
+}
+
+VALID_MODES = ("day", "night")
 
 class LegacySSLAdapter(HTTPAdapter):
     def init_poolmanager(self, connections, maxsize, block=False):
@@ -65,7 +78,7 @@ class DoorClient:
         self.ws_connected = False
         self._active_ws = None
         
-        # Krypto & State
+        # Crypto & State
         self.shared_key = None
         self.device_challenge = None
         self.client_challenge = None
@@ -79,7 +92,7 @@ class DoorClient:
         
         # --- SIMPLE CONNECTION TRACKING ---
         self.connection_count = 0  # Total number of connections made
-        self.current_session_start = None  # When current session started (timestamp)
+        self.current_session_start = None  # Timestamp of current session start
         # ------------------------------------
 
     # --- SIMPLE TRACKING METHODS ---
@@ -90,7 +103,7 @@ class DoorClient:
         return 0.0
     # --------------------------------
 
-    # --- KRYPTO-HELPER ---
+    # --- CRYPTO HELPERS ---
     def _get_pbdf2_key(self) -> bytes:
         salt = (self.serial_number + ":" + self.username).encode('utf-8')
         kdf = PBKDF2HMAC(hashes.SHA256(), 32, salt, 1000, default_backend())
@@ -172,31 +185,46 @@ class DoorClient:
                 header = b'\x85\x00' + len(encrypted).to_bytes(2, 'big')
                 
                 await self._active_ws.send(header + self.client_counter.to_bytes(4, 'big') + encrypted)
-                _LOGGER.debug(f"Befehl via WS an {endpoint} gesendet: {payload}")
+                _LOGGER.debug(f"Command sent via WS to {endpoint}: {payload}")
                 return True
             except Exception as e:
-                _LOGGER.warning(f"WS Senden fehlgeschlagen ({e}), wechsle zu HTTP.")
+                _LOGGER.warning(f"WS send failed ({e}), falling back to HTTP.")
 
         try:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self._request, endpoint, payload)
-            _LOGGER.debug(f"Befehl via HTTP an {endpoint} gesendet: {payload}")
+            _LOGGER.debug(f"Command sent via HTTP to {endpoint}: {payload}")
             return True
         except Exception as e:
-            _LOGGER.error(f"Senden fehlgeschlagen (WS & HTTP): {e}")
+            _LOGGER.error(f"Send failed (WS & HTTP): {e}")
             return False
 
     async def async_execute_command(self, command: str, value: Optional[str] = None) -> bool:
-        payload = {"command": command}
-        if command == "mode" and value in ["day", "night"]: payload["command"] = value
-        elif command == "open": payload["command"] = "unlock"
-        elif command == "lock": payload["command"] = "night"
-        elif command == "unlock": payload["command"] = "day"
-
-        success = await self.async_send_payload("/api/v1/control", payload)
+        # Resolve the Home Assistant intent to a command the lock understands.
+        # Reject anything unknown instead of sending an invalid payload.
+        if command == "mode":
+            if value not in VALID_MODES:
+                _LOGGER.error(
+                    f"[{self.serial_number}] Invalid mode '{value}'. "
+                    f"Expected one of {VALID_MODES}. Command ignored."
+                )
+                return False
+            device_command = value
+        else:
+            device_command = COMMAND_MAP.get(command)
+            if device_command is None:
+                _LOGGER.error(
+                    f"[{self.serial_number}] Unknown command '{command}'. "
+                    f"Expected one of {tuple(COMMAND_MAP)}. Command ignored."
+                )
+                return False
+ 
+        success = await self.async_send_payload(
+            "/api/v1/control", {"command": device_command}
+        )
 
         if success and not self.ws_connected:
-            _LOGGER.info(f"Befehl '{command}' per HTTP gesendet. Simuliere Push-Update...")
+            _LOGGER.info(f"Command '{command}' sent via HTTP. Simulating push update...")
             await asyncio.sleep(3) 
             loop = asyncio.get_running_loop()
             fallback_data = await loop.run_in_executor(None, self.get_states)
@@ -204,23 +232,31 @@ class DoorClient:
                 self.on_state_change(fallback_data)
                 
         return success
+        
+    async def async_unblock(self) -> bool:
+        success = await self.async_send_payload("/api/v1/unblock", {})
+        if success:
+            _LOGGER.info(f"Unblock command successfully sent to {self.serial_number}.")
+        else:
+            _LOGGER.error(f"Failed to send unblock command to {self.serial_number}.")
+        return success
 
     # --- WEBSOCKET LISTENER & WATCHDOG ---
     async def _watchdog_loop(self):
-        _LOGGER.info("Watchdog started.")
+        _LOGGER.info("Watchdog started (75s trigger interval).")
         while True:
             await asyncio.sleep(5)
             time_since_last = time.time() - self.last_message_time
             
-            if time_since_last > 100 and self.ws_connected and self._active_ws:
+            if time_since_last > 75 and self.ws_connected and self._active_ws:
                 _LOGGER.debug(f"Watchdog: {int(time_since_last)}s no message. Pinging...")
                 try:
                     await self.async_send_payload("/api/v1/getStates", {})
                     await asyncio.sleep(5)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _LOGGER.debug(f"Watchdog ping failed: {e}")
 
-                if time.time() - self.last_message_time > 110:
+                if time.time() - self.last_message_time > 85:
                     _LOGGER.warning("WS unresponsive. Triggering HTTP Fallback fetch.")
                     loop = asyncio.get_running_loop()
                     try:
@@ -238,8 +274,12 @@ class DoorClient:
         
         try:
             async for message in websocket:
+                if len(message) < 8:
+                    continue
+                
+                # Only real messages count as a sign of life
                 self.last_message_time = time.time()
-                if len(message) < 8: continue 
+                
                 try:
                     counter = int.from_bytes(message[4:8], 'big')
                     iv = self._get_iv(self.device_challenge, counter)
@@ -256,24 +296,38 @@ class DoorClient:
                             if self.on_state_change:
                                 self.on_state_change(formatted_info)
                         elif "XC_ERR" in data:
-                            _LOGGER.debug("[WATCHDOG PONG] Herzschlag vom Schloss bestätigt.")
+                            # XC_ERR means the lock REJECTED a command.
+                            # Mirror the error extraction used in _request().
+                            err = data.get("XC_ERR")
+                            if isinstance(err, dict):
+                                err_text = err.get("text", "Unknown error")
+                            else:
+                                err_text = str(err)
+                            _LOGGER.warning(
+                                f"[{self.serial_number}] Lock rejected command: "
+                                f"{err_text} (raw: {data})"
+                            )
                         elif "XC_SUC" in data and not target:
                             _LOGGER.debug("[WS ACK] Command successfully acknowledged by lock.")
                         # ------------------------------------------------------------------
                         else:
-                            _LOGGER.debug(f"[WS FILTER] Unbekannte Nachricht ignoriert: {data}")
+                            _LOGGER.debug(f"[WS FILTER] Unknown message ignored: {data}")
 
                 except Exception as e:
                     _LOGGER.error(f"WS Decode Error: {e}")
 
-        except websockets.exceptions.ConnectionClosed:
-            _LOGGER.warning("WS Connection closed.")
+        except websockets.exceptions.ConnectionClosed as e:
+            _LOGGER.warning(f"WS Connection closed: {e}")
+        finally:
+            # No matter how we get here (exception OR normal end of the loop):
+            # the socket is dead. ALWAYS reset the state, otherwise
+            # async_send_payload keeps trying to send over the WebSocket.
             self.ws_connected = False
             self._active_ws = None
-            # --- Track disconnect ---
             self.current_session_start = None
-        finally:
-            if self._watchdog_task: self._watchdog_task.cancel()
+            
+            if self._watchdog_task:
+                self._watchdog_task.cancel()
 
     async def stop(self):
         self._monitor_running = False
@@ -296,7 +350,7 @@ class DoorClient:
             pass
         # ---------------------------------------------------
             
-        _LOGGER.debug("DoorClient Hintergrundprozesse erfolgreich gestoppt.")
+        _LOGGER.debug("DoorClient background tasks stopped successfully.")
         
     async def connect_and_monitor(self):
         self._monitor_running = True
@@ -343,7 +397,17 @@ class DoorClient:
                         # -----------------------------
                         await self._listen(ws)
                     else:
-                        _LOGGER.error("WS Auth Failed.")
+                        # IMPORTANT: without a backoff the while loop would
+                        # reconnect immediately -> endless loop that floods the
+                        # lock with handshakes and spams the Home Assistant log.
+                        _LOGGER.error(
+                            f"[{self.serial_number}] WS Auth Failed. "
+                            f"Check the password. Next attempt in 30s..."
+                        )
+                        self.ws_connected = False
+                        self._active_ws = None
+                        self.current_session_start = None
+                        await asyncio.sleep(30)
             except Exception as e:
                 _LOGGER.error(f"WS Error: {e}. Retrying in 5s...")
                 self.ws_connected = False

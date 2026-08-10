@@ -1,0 +1,165 @@
+# Changelog
+
+## [2.2.0] - 2026-08-08
+
+### Added
+- **Button Platform:** Introduced a new "Clear Errors" button entity (`button.py`) allowing users to actively reset lock error states (`blocked`, `overcurrent`) directly via the `/api/v1/unblock` API endpoint.
+- **Diagnostic Sensor:** Error state sensor now fully maps all known lock error states (`blocked`, `batterylow`, `overcurrent`) directly from the JSON payload.
+- **Translations:** Added comprehensive English and German (`strings.json`, `de.json`) localization for the new button and all error states for a seamless Home Assistant dashboard experience.
+
+### Changed
+- **Hardware Model Detection:** Refactored the device model identification logic. The integration now reliably distinguishes between models (e.g., `EAV4+` vs. `blueMotion+`) based on the device's serial number prefix (`WH_01`) instead of the API version string.
+- **Command Resolution:** Replaced the conditional command chain in `async_execute_command` with an explicit `COMMAND_MAP`, centralising the device's command vocabulary in a single place. Unknown commands and invalid mode values are now rejected with a descriptive log entry instead of being forwarded to the lock as an invalid payload.
+- **Watchdog Timing:** Reduced the watchdog trigger from 100 to 75 seconds and the HTTP fallback threshold from 110 to 85 seconds. With protocol-level keep-alive pings running every 20 seconds, the previous thresholds delayed recovery unnecessarily.
+- **Standardised Logs:** Converted all remaining German log messages and code comments in `api.py` to English. The module is now pure ASCII, avoiding encoding issues on systems with unusual locale settings.
+
+### Fixed
+- **WebSocket Authentication Loop:** Fixed a serious issue where a failed WebSocket handshake (e.g. after a password change) caused the reconnect loop to retry immediately and without limit, flooding the lock with handshake attempts and spamming the Home Assistant log. Failed authentication now backs off for 30 seconds and logs an actionable message.
+- **Stale Connection State:** Connection state (`ws_connected`, `_active_ws`) was only reset when the listener exited via a `ConnectionClosed` exception. If the message loop ended normally, the integration continued to believe the socket was alive and kept routing commands into a dead connection. State is now reset in a `finally` block covering every exit path.
+- **Rejected Command Reporting:** `XC_ERR` responses arriving over the WebSocket were misclassified as watchdog heartbeats and silently discarded at debug level. Commands rejected by the lock are now reported as warnings including the error text from the payload.
+- **Watchdog Keep-Alive Accuracy:** The keep-alive timestamp was refreshed by every incoming frame, including frames too short to carry a payload. Only genuine messages are counted now, so the watchdog no longer misreads noise as a sign of life.
+- **Watchdog Error Visibility:** A bare exception handler in the watchdog loop swallowed all ping failures without a trace. Failures are now logged at debug level.
+
+## [2.1.0] - 2026-06-26
+
+### Added
+- **Error State Sensor:** Introduced a new diagnostic sensor (`sensor.error_state`) to monitor hardware error states directly from the lock's JSON payload.
+- **Translations:** Added English UI translations for lock error states (e.g., "overcurrent") for a cleaner Home Assistant dashboard experience.
+
+### Changed
+- **Robust Payload Parsing:** Enhanced the internal JSON parsing logic to gracefully handle missing `error` arrays, accurately reporting a healthy "No Error" state when the lock does not broadcast faults.
+
+## [2.0.0] - 2026-03-14
+
+### Added
+- **Event-Driven Architecture (Hybrid Mode):** Introduced real-time WebSocket integration. The integration now listens for instant state pushes from the lock (0ms latency on door movements) instead of relying solely on HTTP polling.
+- **Dynamic Mode Switching:** Added the ability to seamlessly toggle between `HYBRID` (WebSocket + Watchdog) and `POLLING` (HTTP) modes directly via the Home Assistant integration options.
+- **Smart Keep-Alive Watchdog:** Implemented a lightweight 100-second WS ping interval. This triggers the lock's status broadcast to prevent the router from dropping the inactive TCP connection during standby periods.
+
+### Changed
+- **Network Optimization:** Drastically reduced network traffic and device load. The system now only utilizes HTTP fallback if the WebSocket connection is completely unresponsive for over 110 seconds.
+- **Log Accuracy:** Updated internal logging and comments to accurately reflect the lock's true broadcast behavior (lock only pushes on physical movement or active requests, not on an internal timer).
+
+### Fixed
+- **Hardware Socket Leaks:** Fixed an issue where rapid reloading or mode switching caused HTTP timeouts (`Failed to communicate with device`). Introduced a clean `stop()` method to kill background tasks and a 2-second hardware cooldown in `async_unload_entry` to allow the lock to gracefully release TCP sockets.
+- **WebSocket Log Spam:** Added a filter to properly catch and silence benign `{"XC_SUC": {}}` command acknowledgments from the WebSocket stream, preventing "Unknown Message" warnings in the Home Assistant logs.
+
+## [1.5.2] - 2026-03-XX
+
+### Added
+- **System Metrics:** Lock/Unlock/Error counter sensors from device statistics (12h polling interval)
+- **Device Information:** Automatic firmware version and model detection from device
+- **Persistent Notifications:** Users are notified when device is offline for 3+ minutes
+- **Centralized Device Info:** All entities now share a single device_info object
+
+### Changed
+- **System State Polling:** Reduced from 60s to 12h interval (saves ~1,438 API calls/day)
+- **Binary Sensor:** More robust state comparison (handles different API response types)
+
+### Fixed
+- **Code Cleanup:** Removed redundant XC_SUC unpacking (already handled by API layer)
+
+## [1.5.1] - 2026-02-XX
+
+### Changed
+- **Refined Firmware Display:** The firmware string is now neatly split and formatted as Version (Timestamp) in the Home Assistant device info (e.g., 1.5.6 (2512151512)).
+- **Model Name Correction:** The raw "BM+" string from the lock is now correctly expanded and displayed as "blueMotion+" for better readability.
+- **Standardized Logs:** System error messages have been switched to English for better consistency and easier troubleshooting.
+- **v2.0 Groundwork:** Internal preparation for the upcoming hybrid architecture, keeping the current polling method as the fallback path.
+
+## [1.5.0] - 2026-02-28
+
+### Added
+- **New Sensor Platform:** Introduced `sensor.py` to expose diagnostic data from the Winkhaus system dump.
+- **Diagnostic Sensors:** Added dedicated sensors for `Lock Count`, `Unlock Count`, and `Error Count` to track door usage and health.
+- **Device Information:** Device info (Firmware version and Hardware Model) is now officially parsed and populated across all entities in the Home Assistant device registry.
+
+### Changed
+- **Dual Coordinator Architecture:** Implemented a secondary `DataUpdateCoordinator` with a 12-hour polling interval specifically for `get_system_state`. This ensures diagnostic data stays updated without overloading the API during regular fast-polling.
+- **Centralized Device Info:** Refactored `device_info` generation to be built centrally once in `__init__.py` and shared across all entities, adhering to the DRY (Don't Repeat Yourself) principle and improving maintainability.
+
+## [1.4.1] - 2026-02-10
+
+### Added
+- **Config Flow**: Added a slider to configure the polling interval (range: 30-300 seconds), defaulting to 60 seconds.
+- **Config Flow**: Added validation to ensure the interval is within the allowed range.
+
+### Changed
+- **Translations**: Updated configuration descriptions to English as requested ("Configure the polling interval...").
+
+### Fixed
+- **Stability**: General stability improvements and code cleanup.
+
+## [1.4.0] - 2026-02-01
+
+### Fixed
+- **Translations**: Fixed a JSON syntax error (unexpected character) in `translations/de.json` that caused the integration setup to fail.
+- **Stability**: Consolidated current code base as stable release v1.4.0.
+
+## [1.3.1] - 2026-01-29
+
+### Added
+- **Graceful Error Recovery:** Coordinator now retains previous state during temporary network failures (up to 3 consecutive errors) before marking entities unavailable.
+
+### Changed
+- **Localization:** Converted all internal log messages and exceptions from German to English for better standardization.
+- **Refactoring:** Renamed internal password variable to `_password` to indicate protected status.
+
+## [1.3.0] - 2026-01-28
+
+### Added
+- **Offline Resilience:** The integration now tolerates short network interruptions (Graceful Degradation). If the lock is unreachable, it keeps the last known state instead of immediately marking entities as "Unavailable".
+- **Legacy SSL Support:** Implemented `SECLEVEL=1` and `OP_LEGACY_SERVER_CONNECT` in the SSL context to support older hardware encryption on modern OS (Debian 12/HA OS).
+
+### Changed
+- **Rubber-Banding Fix:** Added `asyncio` delays (2-3s) after actions (`lock`, `unlock`, `open`, `mode`) to give the mechanical lock time to reach its target position before refreshing the state.
+- **Coordinator Naming:** The DataUpdateCoordinator now uses the device serial number in its name (`winkhaus_doorclient_SERIAL`) for easier debugging.
+
+### Fixed
+- **API Hardening:** Added strict validation of API responses (HTTP Status, Content-Type, JSON structure).
+- **Scanner Resource Leak:** Fixed an issue in `config_flow.py` where the `ServiceBrowser` was not properly cancelled if the scan was interrupted.
+
+## [1.2.6] - 2026-01-25
+
+### Added
+- **Re-Authentication Flow:** If the password on the lock is changed, the integration now prompts the user to enter the new password via Home Assistant's "Repair" dashboard, instead of requiring a full re-installation.
+
+## [1.2.5] - 2026-01-23
+
+### Changed
+- **Auto-IP-Update:** If the IP address of an already configured lock changes (e.g., via DHCP), the integration now detects this automatically via Zeroconf and updates the IP in the configuration without user intervention.
+- **Zeroconf Handling:** Improved processing of discovery packets.
+
+## [1.2.4] - 2026-01-23
+
+### Fixed
+- **Config Flow:** Fixed a translation error (`translation_key 'auth'`). The lock's serial number is now correctly displayed during the password prompt instead of showing a placeholder error.
+
+## [1.2.3] - 2026-01-23
+
+### Added
+- **Zeroconf / Auto-Discovery:** The integration now automatically discovers Winkhaus locks in the network (`_whdc-device._tcp.local.`).
+- **Discovery Flow:** New setup dialog that lists discovered devices for easy selection.
+
+### Changed
+- **Service Registration:** Services (`set_day_mode`, `set_night_mode`, `get_system_state`) now use `platform.async_register_entity_service`. This removes boilerplate code and enables native target selection in the Home Assistant UI.
+- **Manifest:** Bumped version to 1.2.3 and added `zeroconf` entry.
+
+## [1.2.0] - 2026-01-20
+
+### Added
+- **Select Platform:** Added new entity to switch between "Day" and "Night" mode.
+- **Binary Sensor Platform:** Added new entity for door status (Open/Closed).
+- **Architecture:** Introduced `DataUpdateCoordinator`. Status updates are now fetched centrally and distributed to all entities (Lock, Select, Sensor) to reduce load on the lock.
+
+## [1.1.29] - 2026-01-12
+
+### Fixed
+- **HACS Compliance:** Various adjustments and fixes to meet the requirements for inclusion in the default HACS store (structure, linting).
+
+## [1.1.25] - 2025-12-28
+
+### Initial Release
+- Basic functionality (Stable).
+- Manual configuration via IP address.
+- Lock Platform (Lock/Unlock/Open).
