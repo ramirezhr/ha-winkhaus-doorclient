@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.3.0] - 2026-08-09
+
+### Added
+- **Device Naming from Lock Configuration:** The integration now reads the user-defined name from the device via the new `/api/v1/getConfiguration` endpoint. Both the device registry entry and the config entry title follow the name configured on the lock itself (e.g. "Front Door") instead of the generic serial-number placeholder. If the endpoint is unavailable or no name is set, the previous naming scheme is used as a fallback.
+- **Configuration Endpoint:** Added `get_configuration()` to the API client. It is fetched alongside the system state on the existing 12-hour coordinator, so no additional polling load is introduced.
+
+### Changed
+- **Uptime Format:** The `current_uptime` attribute now always reports `HH:MM:SS` with hours accumulating beyond 24. Previously the underlying `timedelta` switched its structure once a session passed the 24 hour mark (`1 day, 1:01:01`), which broke templates parsing the string - and it broke them only after a connection had been stable for a full day, making the failure hard to reproduce.
+- **Standardised Logs:** Converted the remaining German log messages and code comments in `__init__.py`, `sensor.py`, `select.py` and `config_flow.py` to English. The entire integration is now pure ASCII.
+- **Notification Wording:** Removed a misleading minute estimate from the offline notification. The failure count does not translate to minutes, since the update interval differs between Hybrid (120s) and Polling mode.
+
+### Fixed
+- **Timestamp Time Zone:** The `last_update_from_device` attribute displayed a time shifted by the UTC offset - two hours early during daylight saving time in Central Europe. The lock reports a standard UTC timestamp, but the conversion produced a naive string with no offset, so the frontend rendered the UTC value as if it were local time. The attribute now carries an explicit UTC offset and is converted independently of the host system's time zone, which differs between HA OS and container installations. Implausible values from an unset device clock no longer produce a bogus date.
+- **Deprecated Notification API:** Replaced the `hass.components.persistent_notification` helper, which was deprecated in Home Assistant 2024.6 and has since been removed. The offline notification previously raised an `AttributeError` on current Home Assistant versions - precisely when the device was unreachable and the warning was needed most.
+- **Duplicate EntityCategory Import:** Removed a second `EntityCategory` import in `sensor.py` that shadowed the correct one with the deprecated `homeassistant.helpers.entity` path.
+- **Button Error Handling:** The "Clear Errors" button no longer swallows failures silently. Errors from the unblock call are now logged and re-raised so Home Assistant reports the failed action in the UI.
+- **Defensive Configuration Parsing:** Hardened the device name lookup against unexpected payload shapes. Older firmware that omits the `system` object or returns it in a different structure no longer breaks integration setup.
+
 ## [2.2.0] - 2026-08-08
 
 ### Added

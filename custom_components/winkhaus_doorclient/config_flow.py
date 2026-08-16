@@ -117,7 +117,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_auth(self, user_input=None):
         errors = {}
-        serial = self.discovery_info.get("serial_number", "Unbekannt")
+        serial = self.discovery_info.get("serial_number", "Unknown")
         
         if user_input is not None:
             full_data = {
@@ -274,7 +274,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry):
-        # Wir nutzen self._entry statt self.config_entry (HA-intern geschützt)
+        # Use self._entry instead of self.config_entry (reserved by HA core)
         self._entry = config_entry
         self.options = dict(config_entry.options)
 

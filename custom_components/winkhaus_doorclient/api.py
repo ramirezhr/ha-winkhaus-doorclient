@@ -173,6 +173,9 @@ class DoorClient:
     def get_system_state(self) -> Dict[str, Any]:
         return self._request("/api/v1/getSystemState")
 
+    def get_configuration(self) -> Dict[str, Any]:
+        return self._request("/api/v1/getConfiguration")
+
     # --- ASYNC COMMAND & HYBRID LOGIC ---
     async def async_send_payload(self, endpoint: str, payload: Optional[Dict] = None) -> bool:
         

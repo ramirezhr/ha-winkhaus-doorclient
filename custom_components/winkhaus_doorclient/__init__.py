@@ -4,6 +4,7 @@ from datetime import timedelta
 import logging
 import asyncio
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.components import persistent_notification
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -32,10 +33,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     if update_mode == MODE_HYBRID:
         scan_interval_seconds = 120
-        _LOGGER.info(f"[{serial}] Starte im HYBRID-Modus (WebSockets aktiv)")
+        _LOGGER.info(f"[{serial}] Starting in HYBRID mode (WebSockets active)")
     else:
         scan_interval_seconds = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        _LOGGER.info(f"[{serial}] Starte im POLLING-Modus (Intervall: {scan_interval_seconds}s)")
+        _LOGGER.info(f"[{serial}] Starting in POLLING mode (interval: {scan_interval_seconds}s)")
     
     consecutive_failures = 0
     MAX_FAILURES_BEFORE_ALERT = 3
@@ -51,8 +52,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if consecutive_failures > 0:
                 _LOGGER.info(f"[COORDINATOR {serial}] Connection restored after {consecutive_failures} failures")
                 
-                hass.components.persistent_notification.async_dismiss(
-                notification_id=f"winkhaus_{serial}_offline"
+                persistent_notification.async_dismiss(
+                    hass, f"winkhaus_{serial}_offline"
                 )
                 
                 consecutive_failures = 0
@@ -81,15 +82,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         f"Device may be offline or unreachable."
                     )
                 
-                    hass.components.persistent_notification.async_create(
-                        title="⚠️ Winkhaus Door Connection Issue",
+                    persistent_notification.async_create(
+                        hass,
+                        title="Winkhaus Door Connection Issue",
                         message=(
                             f"Your Winkhaus door ({serial}) has been unreachable for "
-                            f"{consecutive_failures} consecutive updates (≈{consecutive_failures} minutes).\n\n"
+                            f"{consecutive_failures} consecutive updates.\n\n"
                             f"Please check:\n"
-                            f"• Is the device powered on?\n"
-                            f"• Is the network connection stable?\n"
-                            f"• Can you ping the device from Home Assistant?"
+                            f"- Is the device powered on?\n"
+                            f"- Is the network connection stable?\n"
+                            f"- Can you ping the device from Home Assistant?"
                         ),
                         notification_id=f"winkhaus_{serial}_offline"
                     )
@@ -103,9 +105,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
     async def async_update_system_data():
-        _LOGGER.debug(f"[SYSTEM COORDINATOR {serial}] Loading system status (12h interval)...")
+        _LOGGER.debug(f"[SYSTEM COORDINATOR {serial}] Loading system and config data (12h interval)...")
         try:
-            return await hass.async_add_executor_job(client.get_system_state)
+            sys_data = await hass.async_add_executor_job(client.get_system_state)        
+            try:
+                conf_data = await hass.async_add_executor_job(client.get_configuration)
+            except Exception as conf_err:
+                _LOGGER.warning(f"[{serial}] Could not load configuration: {conf_err}")
+                conf_data = {}
+            sys_data["_config"] = conf_data
+            return sys_data
+            
         except Exception as err:
             raise UpdateFailed(f"Error fetching system state: {err}") from err
             
@@ -128,19 +138,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     try:
-        _LOGGER.debug(f"[{serial}] Initialer HTTP-Refresh gestartet...")
+        _LOGGER.debug(f"[{serial}] Initial HTTP refresh started...")
         await coordinator.async_config_entry_first_refresh()
         await system_coordinator.async_config_entry_first_refresh()
     except ConfigEntryAuthFailed:
         raise
     except Exception as err:
-        _LOGGER.error(f"[COORDINATOR {serial}] Initialer Start fehlgeschlagen: {err}")
+        _LOGGER.error(f"[COORDINATOR {serial}] Initial startup failed: {err}")
         if coordinator.data is None:
-            _LOGGER.error(f"[COORDINATOR {serial}] Keine Cached-Daten verfügbar. Abbruch.")
+            _LOGGER.error(f"[COORDINATOR {serial}] No cached data available. Aborting.")
             return False
             
     def handle_state_change(new_states):
-        _LOGGER.debug(f"[PUSH {serial}] Sofortiges Update empfangen: {new_states}")
+        _LOGGER.debug(f"[PUSH {serial}] Instant update received: {new_states}")
         coordinator.async_set_updated_data(new_states)
 
     client.on_state_change = handle_state_change
@@ -148,7 +158,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if update_mode == MODE_HYBRID:
         async def start_ws_delayed():
             await asyncio.sleep(2)
-            _LOGGER.debug(f"[WS PUSH {serial}] Starte WebSocket Überwachung...")
+            _LOGGER.debug(f"[WS PUSH {serial}] Starting WebSocket monitoring...")
             await client.connect_and_monitor()
 
         entry.async_create_background_task(
@@ -159,7 +169,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
     sys_data = system_coordinator.data or {}
+    config_data = sys_data.get("_config", {})
     
+    # Read the user-defined name from {"system": {"name": "Front Door"}}.
+    # Guard every level: the endpoint may be missing, empty or shaped
+    # differently on older firmware.
+    lock_name = None
+    if isinstance(config_data, dict):
+        system_cfg = config_data.get("system")
+        if isinstance(system_cfg, dict):
+            lock_name = system_cfg.get("name")
+    
+    # Fall back to the serial number if no name is set or the API failed
+    device_name = lock_name if lock_name else f"Winkhaus Door ({serial})"
+    
+    # Hardware model detection based on the serial number prefix
     if serial.startswith("WH_01"):
         model_name = "EAV4+"
     else:
@@ -177,11 +201,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
     device_info = {
         "identifiers": {(DOMAIN, serial)},
-        "name": f"Winkhaus Door ({serial})",
+        "name": device_name,
         "manufacturer": "Winkhaus",
         "model": model_name,
         "sw_version": sw_version,
     }
+
+    # Keep the config entry title in sync with the name configured on the
+    # lock, so the integration list shows the same name as the device.
+    if lock_name and entry.title != lock_name:
+        hass.config_entries.async_update_entry(entry, title=lock_name)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
@@ -208,10 +237,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_data = hass.data[DOMAIN].get(entry.entry_id)
         
         if entry_data and "client" in entry_data:
-            _LOGGER.debug(f"Trenne aktive Verbindungen (WebSocket/Watchdog) für {entry.entry_id}...")
+            _LOGGER.debug(f"Closing active connections (WebSocket/Watchdog) for {entry.entry_id}...")
             await entry_data["client"].stop()
             
-            _LOGGER.debug("Warte 2 Sekunden, damit das Schloss Sockets freigeben kann...")
+            _LOGGER.debug("Waiting 2 seconds to let the lock release its sockets...")
             await asyncio.sleep(2)
             # ------------------------------------------
 

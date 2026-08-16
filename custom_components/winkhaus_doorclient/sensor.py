@@ -7,7 +7,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN, CONF_UPDATE_MODE, MODE_HYBRID
 
@@ -97,26 +96,23 @@ class WinkhausErrorStateSensor(CoordinatorEntity, SensorEntity):
         self._attr_icon = "mdi:alert-circle-outline"
         self._attr_device_info = device_info
         
-        # Für die Übersetzungen später wichtig:
-        self._attr_translation_key = "error_state" 
+        # Required for the UI translations of the error states
+        self._attr_translation_key = "error_state"
 
     @property
     def native_value(self) -> str | None:
         if not self.coordinator.data:
             return None
         
-        # Da dein api.py die Liste von dicts baut [{'name': 'locked', 'value': False}, ...]
+        # api.py delivers a list of dicts: [{'name': 'locked', 'value': False}, ...]
         error_data = next((item['value'] for item in self.coordinator.data if item['name'] == 'error'), None)
         
-        # Wenn der Key nicht existiert oder die Liste leer ist -> "none"
+        # Key missing or list empty -> "none"
         if not error_data:
             return "none"
         
-        # Falls es eine Liste ist (z.B. ["overcurrent"]), als String verbinden
+        # If it is a list (e.g. ["overcurrent"]), join it into a string
         if isinstance(error_data, list) and len(error_data) > 0:
             return ", ".join(error_data)
             
         return str(error_data)
-
-
-

@@ -2,13 +2,13 @@
 
 import logging
 import asyncio
-from datetime import datetime, timedelta
 from homeassistant.components.lock import LockEntity, LockEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import entity_platform
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .api import DoorClient
@@ -70,7 +70,7 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
             value = item["value"]
             
             if key == "time" and isinstance(value, (int, float)):
-                attributes["last_update_from_device"] = datetime.fromtimestamp(value).isoformat()
+                attributes["last_update_from_device"] = self._device_time_to_iso(value)
             elif key not in ["time"]:
                 attributes[key] = value
         
@@ -84,9 +84,7 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
         # Current session uptime
         uptime_seconds = self._client.get_current_uptime()
         if uptime_seconds > 0:
-            # Format as human-readable
-            uptime_delta = timedelta(seconds=int(uptime_seconds))
-            attributes["current_uptime"] = str(uptime_delta)
+            attributes["current_uptime"] = self._format_uptime(uptime_seconds)
             attributes["current_uptime_seconds"] = round(uptime_seconds, 1)
         else:
             attributes["current_uptime"] = "Not connected"
@@ -94,7 +92,40 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
         # -------------------------------------------
 
         return attributes
+
+    @staticmethod
+    def _format_uptime(seconds: float) -> str:
+        """Format an uptime as HH:MM:SS with hours accumulating past 24.
+
+        str(timedelta()) switches its structure once a session passes the
+        24 hour mark ("1 day, 1:01:01" instead of "1:01:01"), which breaks
+        templates that parse the string. Hours simply keep counting up
+        here, so the value always consists of three numeric fields.
+        """
+        total = int(seconds)
+        hours, remainder = divmod(total, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
     
+    @staticmethod
+    def _device_time_to_iso(value: int | float) -> str | None:
+        """Convert the lock's timestamp into a timezone-aware ISO string.
+
+        The lock reports a standard UTC Unix timestamp. Tagging it explicitly
+        as UTC makes the result independent of the host's system time zone,
+        which differs between HA OS and container installs. Home Assistant
+        then renders it in the user's configured zone.
+
+        The previous code produced a naive string, so the frontend fell back
+        to interpreting it as local time and displayed the value shifted by
+        the UTC offset.
+        """
+        try:
+            return dt_util.utc_from_timestamp(float(value)).isoformat()
+        except (OverflowError, OSError, ValueError):
+            # Lock reported a nonsensical timestamp (e.g. uninitialised clock)
+            return None
+
     async def async_get_system_state(self):
         try:
             state = await self.hass.async_add_executor_job(self._client.get_system_state)
