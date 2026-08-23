@@ -93,14 +93,52 @@ class DoorClient:
         # --- SIMPLE CONNECTION TRACKING ---
         self.connection_count = 0  # Total number of connections made
         self.current_session_start = None  # Timestamp of current session start
+        self.last_session_seconds = 0.0  # Duration of the session that just ended
         # ------------------------------------
+
+        # --- FRAGMENT REASSEMBLY ---
+        self._rx_buffer = bytearray()  # Decrypted plaintext of pending fragments
+        self._rx_type = None  # Packet type nibble of the pending message
+        # ----------------------------
+
+        # --- REQUEST ATTRIBUTION ---
+        # The device never echoes our counter back, so a rejection cannot be
+        # matched to its request by ID. The original client has the same
+        # limitation and simply remembers the most recent request, which is
+        # accurate as long as commands are not pipelined.
+        self._last_request = None  # (endpoint, payload, timestamp)
+        # ----------------------------
+
+        # --- REPLAY PROTECTION ---
+        # The device runs its own counter, independent of ours. Accepting only
+        # strictly increasing values rejects replays and stale frames. None
+        # means "no message seen yet", so the first one is always accepted.
+        self._device_counter = None
+        # ----------------------------
 
     # --- SIMPLE TRACKING METHODS ---
     def get_current_uptime(self) -> float:
-        """Get current session uptime in seconds."""
         if self.current_session_start:
             return time.time() - self.current_session_start
         return 0.0
+
+    def _format_session_duration(self) -> str:
+        total = int(self.last_session_seconds)
+        hours, remainder = divmod(total, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    def _describe_last_request(self) -> str:
+        if not self._last_request:
+            return "a request (none recorded)"
+
+        endpoint, payload, sent_at = self._last_request
+        age = time.time() - sent_at
+        described = f"{endpoint} {payload}" if payload else endpoint
+
+        if age > 10:
+            return f"a request - last one was {described} {age:.0f}s ago, may be unrelated"
+        return f"{described} (sent {age:.1f}s ago)"
     # --------------------------------
 
     # --- CRYPTO HELPERS ---
@@ -188,6 +226,12 @@ class DoorClient:
                 header = b'\x85\x00' + len(encrypted).to_bytes(2, 'big')
                 
                 await self._active_ws.send(header + self.client_counter.to_bytes(4, 'big') + encrypted)
+
+                # Remember what went out last. A rejection arrives
+                # asynchronously and carries no reference to its request, so
+                # this is the only way to name the offending command.
+                self._last_request = (endpoint, payload, time.time())
+
                 _LOGGER.debug(f"Command sent via WS to {endpoint}: {payload}")
                 return True
             except Exception as e:
@@ -284,10 +328,57 @@ class DoorClient:
                 self.last_message_time = time.time()
                 
                 try:
+                    header = message[0]
+                    is_final = bool(header & 0x80)
+                    packet_type = header & 0x0F
+
+                    # The device splits large payloads into chunks of up to
+                    # 1024 bytes and only sets the 0x80 bit on the last one.
+                    # Every chunk is encrypted separately with its own counter,
+                    # so decrypt first and concatenate the plaintext.
+                    if self._rx_type is not None and packet_type != self._rx_type:
+                        _LOGGER.debug(
+                            f"Packet type changed from {self._rx_type} to {packet_type}, "
+                            f"dropping {len(self._rx_buffer)} buffered bytes."
+                        )
+                        self._rx_buffer.clear()
+
                     counter = int.from_bytes(message[4:8], 'big')
+
+                    # Reject replays and stale frames. The counter is only
+                    # advanced after a successful decrypt, so a corrupted frame
+                    # cannot lock out the messages that follow it.
+                    if self._device_counter is not None and counter <= self._device_counter:
+                        _LOGGER.debug(
+                            f"Ignoring message with non-increasing counter "
+                            f"{counter} (last was {self._device_counter})."
+                        )
+                        continue
+
                     iv = self._get_iv(self.device_challenge, counter)
                     decrypted = AESCCM(self.shared_key, tag_length=16).decrypt(iv, message[8:], None)
-                    payload = decrypted.decode('utf-8')
+                    self._device_counter = counter
+
+                    self._rx_buffer.extend(decrypted)
+                    self._rx_type = packet_type
+
+                    if not is_final:
+                        # A lost final fragment would otherwise grow this
+                        # buffer without bound on a long-lived connection.
+                        if len(self._rx_buffer) > 65536:
+                            _LOGGER.warning(
+                                f"[{self.serial_number}] Reassembly buffer exceeded 64 KB "
+                                f"without a final fragment. Discarding."
+                            )
+                            self._rx_buffer.clear()
+                            self._rx_type = None
+                        continue
+
+                    # Decode only once the message is complete: a fragment can
+                    # end in the middle of a multi-byte UTF-8 character.
+                    payload = bytes(self._rx_buffer).decode('utf-8')
+                    self._rx_buffer.clear()
+                    self._rx_type = None
                    
                     if payload.strip().startswith('{'):
                         data = json.loads(payload)
@@ -299,7 +390,7 @@ class DoorClient:
                             if self.on_state_change:
                                 self.on_state_change(formatted_info)
                         elif "XC_ERR" in data:
-                            # XC_ERR means the lock REJECTED a command.
+                            # XC_ERR means the lock REJECTED a request.
                             # Mirror the error extraction used in _request().
                             err = data.get("XC_ERR")
                             if isinstance(err, dict):
@@ -307,8 +398,8 @@ class DoorClient:
                             else:
                                 err_text = str(err)
                             _LOGGER.warning(
-                                f"[{self.serial_number}] Lock rejected command: "
-                                f"{err_text} (raw: {data})"
+                                f"[{self.serial_number}] Lock rejected "
+                                f"{self._describe_last_request()}: {err_text}"
                             )
                         elif "XC_SUC" in data and not target:
                             _LOGGER.debug("[WS ACK] Command successfully acknowledged by lock.")
@@ -325,9 +416,20 @@ class DoorClient:
             # No matter how we get here (exception OR normal end of the loop):
             # the socket is dead. ALWAYS reset the state, otherwise
             # async_send_payload keeps trying to send over the WebSocket.
+            # Keep the duration first - it is the most useful piece of
+            # information when a session drops unexpectedly.
+            self.last_session_seconds = self.get_current_uptime()
             self.ws_connected = False
             self._active_ws = None
             self.current_session_start = None
+
+            # Do not carry a half-assembled message into the next session
+            self._rx_buffer.clear()
+            self._rx_type = None
+
+            # The device restarts its counter on every handshake, so a stale
+            # value here would reject every message of the next session.
+            self._device_counter = None
             
             if self._watchdog_task:
                 self._watchdog_task.cancel()
@@ -399,6 +501,21 @@ class DoorClient:
                         await self.async_send_payload("/api/v1/getStates", {})
                         # -----------------------------
                         await self._listen(ws)
+
+                        # _listen handles ConnectionClosed itself and returns
+                        # normally, so the except branch below never sees it and
+                        # its backoff does not apply. Without a pause here the
+                        # while loop reconnects instantly - the same hammering
+                        # pattern as a failed authentication, just triggered by
+                        # a dropped session instead.
+                        # The socket is always dead once _listen returns, so
+                        # waiting inside the context manager costs nothing.
+                        if self._monitor_running:
+                            _LOGGER.info(
+                                f"[{self.serial_number}] WS session ended after "
+                                f"{self._format_session_duration()}. Reconnecting in 5s..."
+                            )
+                            await asyncio.sleep(5)
                     else:
                         # IMPORTANT: without a backoff the while loop would
                         # reconnect immediately -> endless loop that floods the

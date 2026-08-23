@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.0] - 2026-08-14
+
+### Added
+- **Fragment Reassembly:** The lock splits payloads larger than roughly 1 KB into chunks, marking only the last one with a FIN bit, and encrypts each chunk separately. The integration now buffers the decrypted plaintext until the final chunk arrives instead of treating every chunk as a complete message. Previously a split response was lost entirely: the first chunk failed JSON parsing and the remainder was discarded silently. Decoding is deferred until the message is complete, since a chunk boundary can fall inside a multi-byte UTF-8 character.
+- **Rejection Attribution:** Warnings about rejected requests now name the request they belong to, e.g. `Lock rejected /api/v1/control {'command': 'night'} (sent 0.4s ago): blocked`. The device does not echo request identifiers, so attribution is by recency - accurate while a single request is in flight, and flagged as uncertain when the last request went out more than ten seconds earlier.
+- **Replay Protection:** Incoming messages must carry a strictly increasing counter. The counter only advances after a successful decrypt, so a corrupted frame cannot lock out the messages that follow it, and it resets on every handshake because the device restarts its own sequence.
+
+### Fixed
+- **Reconnect Loop After a Dropped Session:** `_listen` handles `ConnectionClosed` itself and returns normally, so the backoff in the enclosing exception handler never applied and the reconnect loop restarted instantly. A device that repeatedly drops the connection would have been hammered with handshakes - the same failure mode as the authentication loop fixed in 2.2.0, reached by a different path. Sessions now pause five seconds before reconnecting, and the log records how long the session lasted.
+- **Attributes Vanishing After a Push:** A state-change push carries only the fields that changed, but it replaced the entire data set, so fields present only in a full poll - notably `last_update_from_device` - disappeared until the next watchdog cycle. Pushes are now merged into the existing data. Fields the lock omits rather than reporting as empty are exempt from the merge, so a cleared fault does not linger on the error sensor.
+
 ## [2.3.0] - 2026-08-09
 
 ### Added

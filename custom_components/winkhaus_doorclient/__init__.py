@@ -13,6 +13,12 @@ from .api import DoorClient
 from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, CONF_UPDATE_MODE, MODE_HYBRID, MODE_POLLING
 
 PLATFORMS = ["lock", "select", "binary_sensor", "sensor", "button"]
+
+# Fields the lock omits entirely instead of reporting an empty value. Their
+# absence is the message, so they must never be carried over from a previous
+# payload when merging a partial push.
+TRANSIENT_KEYS = {"error"}
+
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -151,7 +157,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             
     def handle_state_change(new_states):
         _LOGGER.debug(f"[PUSH {serial}] Instant update received: {new_states}")
-        coordinator.async_set_updated_data(new_states)
+
+        # A state-change push carries only the fields that changed, while a
+        # full poll also carries e.g. "time". Replacing the whole set would
+        # make those fields vanish until the next poll, so merge instead.
+        #
+        # TRANSIENT_KEYS are exempt: the lock omits them rather than sending
+        # an empty value, so inheriting a previous value would keep a cleared
+        # fault alive forever.
+        merged = {
+            item["name"]: item["value"]
+            for item in (coordinator.data or [])
+            if item["name"] not in TRANSIENT_KEYS
+        }
+        merged.update({item["name"]: item["value"] for item in new_states})
+
+        coordinator.async_set_updated_data(
+            [{"name": key, "value": value} for key, value in merged.items()]
+        )
 
     client.on_state_change = handle_state_change
 
