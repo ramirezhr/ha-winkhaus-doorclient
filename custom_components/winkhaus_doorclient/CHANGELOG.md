@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.4.2] - 2026-08-16
+
+### Fixed
+- **Non-Deterministic Entity IDs:** Since 2.3.0 the device carries the name
+  configured on the lock, and Home Assistant derives entity ids from the device
+  name. That made the ids depend on a value the user can change - and one that
+  is not even known yet if the configuration request fails during the very first
+  setup, in which case the placeholder name was used instead. Two identical
+  installations could therefore end up with different entity ids. Entity ids are
+  now built from the serial number, which is stable and already the basis of
+  every unique id. The lock's name remains in use for the friendly name, where
+  it belongs. Existing entities keep their current ids; Home Assistant only
+  assigns an id once, so nothing breaks in automations.
+
+## [2.4.1] - 2026-08-15
+
+### Fixed
+- **Setup Aborted Instead of Retrying:** When the lock was not reachable during the initial refresh - typically while Home Assistant was still booting and the network had not settled - the integration gave up permanently and had to be reloaded by hand. `async_config_entry_first_refresh()` raises `ConfigEntryNotReady` in that situation, which is Home Assistant's signal to retry with a growing backoff, but a broad `except Exception` caught it and turned it into a plain setup failure. The signal is now passed through, alongside `ConfigEntryAuthFailed` which was already handled correctly, so a device that is briefly unavailable at boot no longer needs manual intervention.
+- **Unhelpful Error Text:** Startup and update failures were logged with the exception class name only. Since the API layer wraps every network problem in a plain `Exception`, the log read `: Exception` and revealed nothing about the cause. The message is logged instead, so a timeout, a refused connection and a name resolution failure can be told apart.
+
 ## [2.4.0] - 2026-08-14
 
 ### Added

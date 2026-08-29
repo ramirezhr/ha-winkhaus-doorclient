@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, build_entity_id
 from .api import DoorClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ class WinkhausDoorSensor(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator)
         self._client = client
         self._attr_unique_id = f"{entry.data['serial_number']}_door_state"
+        self.entity_id = build_entity_id("binary_sensor", entry.data['serial_number'], "door")
         self._attr_name = "Door"
         self._attr_device_class = BinarySensorDeviceClass.DOOR
         

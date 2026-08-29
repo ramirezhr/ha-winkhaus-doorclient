@@ -5,7 +5,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Default-orange?style=for-the-badge)](https://github.com/hacs/integration)
 [![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue?style=for-the-badge)](https://github.com/ramirezhr)
 
-Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+) via local API.
+Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+ and EAV4+) via local API.
 
 This integration communicates directly with your door controller over the local network. **No cloud connection required.**
 
@@ -19,15 +19,17 @@ This integration communicates directly with your door controller over the local 
 
 * **⚡ WebSocket Real-time Updates:** Instant status changes with <0.5s latency
 * **🔄 Hybrid Communication:** WebSocket primary, HTTP fallback for maximum reliability
-* **📊 80% Fewer API Calls:** ~290/day vs ~1,440/day in pure polling mode
+* **📊 Half the HTTP Requests:** ~720/day vs ~1,440/day in pure polling mode
 * **🛡️ Triple Safety Net:** Protocol pings (20s) + Watchdog (75s) + HTTP polling (120s)
-* **📈 Connection Diagnostics:** Built-in statistics, quality metrics, and diagnostics panel
+* **📈 Connection Statistics:** Uptime, reconnect count and link status as lock attributes
 
 ### 🔓 Core Features
 
 * **🔓 Lock Control:** Lock (Night Mode), Unlock (Day Mode), and Open (Pull Latch)
 * **🚪 Door Status:** Binary sensor showing if door is physically open or closed
 * **🌗 Day/Night Mode:** Dedicated select entity to switch between modes
+* **⚠️ Error State Sensor:** Reports hardware faults (motor blocked, overcurrent, low battery)
+* **🔁 Clear Errors Button:** Resets a fault state on the lock without a power cycle
 * **🔍 Auto-Discovery:** Automatically finds devices via Zeroconf/mDNS
 * **🔐 Secure Local Connection:** HTTPS with legacy SSL compatibility
 * **🛡️ Network Resilience:** Maintains last known state during temporary outages
@@ -96,9 +98,9 @@ The integration supports two operation modes:
 * 🔄 Auto-recovery: Reconnects automatically
 
 **Performance:**
-- API Calls/Day: ~290 (-80%)
+- HTTP Requests/Day: ~720 (-50%)
 - Command Latency: <0.5s
-- Status Latency: <1s (instant push)
+- Status Latency: <1s - the lock pushes changes as they happen
 
 ### 2️⃣ Classic Polling Mode
 
@@ -109,9 +111,9 @@ The integration supports two operation modes:
 * 📶 Simple: Works on any network
 
 **Performance:**
-- API Calls/Day: ~1,440 (at 60s)
+- HTTP Requests/Day: ~1,440 (at 60s)
 - Command Latency: 2-3s
-- Status Latency: 0-60s
+- Status Latency: 0-60s - a change is only noticed at the next poll
 
 **To switch modes:**
 Settings → Devices & Services → Winkhaus Door → Configure → Select mode
@@ -120,16 +122,42 @@ Settings → Devices & Services → Winkhaus Door → Configure → Select mode
 
 ## 🧩 Entities Created
 
-After setup, the following entities are available (example for serial `SERIAL123`):
+Entity IDs are derived from the serial number, so they are identical on every
+installation. The examples below use the serial `SERIAL123`.
 
 | Entity ID | Type | Description |
 |-----------|------|-------------|
 | `lock.winkhaus_door_serial123_lock` | Lock | Main control (Lock/Unlock/Open) |
 | `binary_sensor.winkhaus_door_serial123_door` | Binary Sensor | Door contact (Open/Closed) |
 | `select.winkhaus_door_serial123_mode` | Select | Day/Night mode selector |
-| `sensor.winkhaus_door_serial123_lock_count` | Sensor | Total lock operations |
-| `sensor.winkhaus_door_serial123_unlock_count` | Sensor | Total unlock operations |
-| `sensor.winkhaus_door_serial123_error_count` | Sensor | Error counter |
+| `button.winkhaus_door_serial123_clear_errors` | Button | Clears a fault state on the lock |
+| `sensor.winkhaus_door_serial123_lock_cnt` | Sensor | Total lock operations |
+| `sensor.winkhaus_door_serial123_unlock_cnt` | Sensor | Total unlock operations |
+| `sensor.winkhaus_door_serial123_error_cnt` | Sensor | Error counter |
+| `sensor.winkhaus_door_serial123_error_state` | Sensor | Current fault (diagnostic) |
+| `sensor.winkhaus_door_serial123_connection_mode` | Sensor | Hybrid or Polling (diagnostic) |
+
+**Display names** follow the name configured on the lock itself. A door named
+"Front Door" shows up as *Front Door Lock*, *Front Door Mode* and so on, while
+the entity IDs stay tied to the serial number.
+
+### Lock Attributes
+
+The lock entity carries the current status plus connection statistics:
+
+| Attribute | Description |
+|-----------|-------------|
+| `state` | `open` or `closed` |
+| `locked` | `true` or `false` |
+| `mode` | `day` or `night` |
+| `last_update_from_device` | Timestamp of the last status the lock reported |
+| `websocket_connected` | Whether the WebSocket link is currently up |
+| `connection_count` | WebSocket connections since Home Assistant started |
+| `current_uptime` | Length of the current session as `HH:MM:SS` |
+| `current_uptime_seconds` | The same value as a number, for templates and graphs |
+
+Hours keep counting past 24, so a two-day session reads `48:30:23` rather than
+switching format.
 
 ---
 
@@ -139,6 +167,7 @@ After setup, the following entities are available (example for serial `SERIAL123
 
 * `winkhaus_doorclient.set_day_mode` - Switch to day mode (unlocked/trap)
 * `winkhaus_doorclient.set_night_mode` - Switch to night mode (locked)
+* `winkhaus_doorclient.get_system_state` - Write the full system state to the Home Assistant log (for troubleshooting)
 
 ---
 
@@ -191,22 +220,41 @@ automation:
           entity_id: lock.winkhaus_door_serial123_lock
 ```
 
-### Connection Quality Alert
+### Fault Notification
+
+```yaml
+automation:
+  - alias: "Winkhaus Fault Alert"
+    trigger:
+      - platform: state
+        entity_id: sensor.winkhaus_door_serial123_error_state
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.state != 'none' }}"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "🔐 Door Fault"
+          message: "Winkhaus door reports: {{ trigger.to_state.state }}"
+```
+
+### WebSocket Disconnected for a While
 
 ```yaml
 automation:
   - alias: "Winkhaus Connection Alert"
     trigger:
       - platform: state
-        entity_id: sensor.winkhaus_door_serial123_connection_quality
-        to: 'Poor'
+        entity_id: lock.winkhaus_door_serial123_lock
+        attribute: websocket_connected
+        to: false
         for:
-          minutes: 5
+          minutes: 10
     action:
       - service: notify.mobile_app
         data:
           title: "🔐 Door Connection Issue"
-          message: "Winkhaus door connection quality degraded. Check device and network."
+          message: "WebSocket down for 10 minutes. HTTP fallback is still active."
 ```
 
 ---
@@ -255,6 +303,8 @@ automation:
 ### Encryption & Authentication
 
 * **Transport:** HTTPS (TLS 1.2) for HTTP, AES-CCM for WebSocket
+* **Key Exchange:** X25519 Elliptic Curve Diffie-Hellman
+* **Authentication:** PBKDF2 with HMAC-SHA1 challenge-response
 * **Local Only:** No cloud servers, all communication stays on your network
 
 ### Important Notes
@@ -295,9 +345,9 @@ The integration uses `SECLEVEL=1` to maintain compatibility with the door contro
 
 **Solutions:**
 - Check Home Assistant logs for errors
-- Integration keeps last known state for 3 minutes during outages
-- Connection auto-recovers when device comes back online
-- If persistent, try reloading integration
+- The integration keeps the last known state across three failed polls before raising an alert (about six minutes in Hybrid mode, three in Polling mode at the default interval)
+- Connection auto-recovers when the device comes back online
+- If persistent, try reloading the integration
 
 ### WebSocket Not Connecting
 
@@ -316,15 +366,17 @@ The integration uses `SECLEVEL=1` to maintain compatibility with the door contro
        websockets.client: debug
    ```
 
-### Poor Connection Quality
+### Frequent Reconnects
 
-**Symptoms:** Sensor shows "Fair" or "Poor" quality
+**Symptoms:** The `connection_count` attribute climbs steadily, `current_uptime` rarely
+reaches more than a few hours
 
 **Solutions:**
-- Improve WiFi signal strength to door controller
-- Reduce network congestion
-- Check for interference from other devices
-- Review diagnostics: Settings → Devices → Download Diagnostics
+- Improve WiFi signal strength to the door controller
+- Reduce network congestion and check for interference
+- Look for `WS session ended after HH:MM:SS` in the log to see how long sessions last
+- Occasional reconnects are normal and handled automatically; commands keep working
+  through the HTTP fallback while the link is down
 
 ### Commands Not Working
 
@@ -356,7 +408,9 @@ Then check: **Settings** → **System** → **Logs**
 Look for:
 - `WS Auth OK` - WebSocket connected successfully
 - `WS Status Update` - Status pushes received
-- `Befehl via WS` - Commands sent via WebSocket
+- `Command sent via WS to` - Commands sent via WebSocket
+- `WS session ended after` - How long a session lasted before reconnecting
+- `Lock rejected` - The lock refused a request, including which one
 - `% sending keepalive ping` - Protocol pings active
 
 ---
@@ -391,7 +445,8 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## 🙏 Credits
 
 - **Integration Author:** [@ramirezhr](https://github.com/ramirezhr)
-- **Hardware:** [Winkhaus blueMotion+](https://www.winkhaus.de/)
+- **Protocol:** Reverse engineered from the official client
+- **Hardware:** [Winkhaus blueMotion+ / EAV4+](https://www.winkhaus.de/)
 
 ---
 

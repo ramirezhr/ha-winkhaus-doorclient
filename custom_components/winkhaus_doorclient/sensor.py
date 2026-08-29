@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, CONF_UPDATE_MODE, MODE_HYBRID
+from .const import DOMAIN, CONF_UPDATE_MODE, MODE_HYBRID, build_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ class WinkhausSystemSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._key = key
         self._attr_unique_id = f"{entry.data['serial_number']}_{key}"
+        self.entity_id = build_entity_id("sensor", entry.data['serial_number'], key)
         self._attr_name = name
         self._attr_device_info = device_info
 
@@ -73,6 +74,7 @@ class WinkhausConnectionModeSensor(SensorEntity):
         self._entry = entry
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.data['serial_number']}_connection_mode"
+        self.entity_id = build_entity_id("sensor", entry.data['serial_number'], "connection_mode")
         self._attr_name = "Connection Mode"
 
     @property
@@ -91,6 +93,7 @@ class WinkhausErrorStateSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, entry: ConfigEntry, device_info: dict) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.data['serial_number']}_error_state"
+        self.entity_id = build_entity_id("sensor", entry.data['serial_number'], "error_state")
         self._attr_name = "Error State"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_icon = "mdi:alert-circle-outline"

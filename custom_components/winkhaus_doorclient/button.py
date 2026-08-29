@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import EntityCategory
 
-from .const import DOMAIN
+from .const import DOMAIN, build_entity_id
 from .api import DoorClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ class WinkhausUnblockButton(ButtonEntity):
     def __init__(self, client: DoorClient, entry: ConfigEntry, device_info: dict) -> None:
         self._client = client
         self._attr_unique_id = f"{entry.data['serial_number']}_unblock"
+        self.entity_id = build_entity_id("button", entry.data['serial_number'], "clear_errors")
         self._attr_translation_key = "clear_errors"
         self._attr_device_info = device_info
         

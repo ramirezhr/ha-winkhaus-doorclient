@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import entity_platform
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import DOMAIN, build_entity_id
 from .api import DoorClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
         super().__init__(coordinator)
         self._client = client
         self._attr_unique_id = entry.data["serial_number"]
+        self.entity_id = build_entity_id("lock", entry.data["serial_number"], "lock")
         self._attr_name = "Lock"
         self._attr_device_info = device_info
         self._attr_supported_features = LockEntityFeature.OPEN

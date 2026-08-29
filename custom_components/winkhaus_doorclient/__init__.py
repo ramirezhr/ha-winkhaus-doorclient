@@ -8,7 +8,7 @@ from homeassistant.components import persistent_notification
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from .api import DoorClient
 from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, CONF_UPDATE_MODE, MODE_HYBRID, MODE_POLLING
 
@@ -68,7 +68,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             
         except Exception as err:
             error_msg = str(err)
-            error_type = type(err).__name__
             
             if "401" in error_msg or "Authentication failed" in error_msg:
                 _LOGGER.error(f"[COORDINATOR {serial}] Authentication failed - triggering reauth")
@@ -78,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             
             if coordinator.data is not None:
                 _LOGGER.warning(
-                    f"[COORDINATOR {serial}] Update failed ({error_type}), "
+                    f"[COORDINATOR {serial}] Update failed ({error_msg}), "
                     f"keeping previous data (failure #{consecutive_failures})"
                 )
                 
@@ -105,9 +104,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return coordinator.data
             
             _LOGGER.error(
-                f"[COORDINATOR {serial}] Initial setup failed, no cached data available: {error_type}"
+                f"[COORDINATOR {serial}] Initial setup failed, no cached data available: {error_msg}"
             )
-            raise UpdateFailed(f"Failed to communicate with device: {error_type}") from err
+            raise UpdateFailed(f"Failed to communicate with device: {error_msg}") from err
 
 
     async def async_update_system_data():
@@ -147,7 +146,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug(f"[{serial}] Initial HTTP refresh started...")
         await coordinator.async_config_entry_first_refresh()
         await system_coordinator.async_config_entry_first_refresh()
-    except ConfigEntryAuthFailed:
+    except (ConfigEntryAuthFailed, ConfigEntryNotReady):
+        # Both are Home Assistant's own retry signals: AuthFailed starts the
+        # reauth flow, NotReady schedules another setup attempt with backoff.
+        # Swallowing NotReady turned "try again shortly" into a permanent
+        # failure - which is exactly what happened when the lock was not yet
+        # reachable while Home Assistant was still booting.
         raise
     except Exception as err:
         _LOGGER.error(f"[COORDINATOR {serial}] Initial startup failed: {err}")
