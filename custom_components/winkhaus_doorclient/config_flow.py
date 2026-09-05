@@ -229,6 +229,82 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors
         )
 
+    async def async_step_reconfigure(self, user_input=None):
+        # Change connection settings of an existing entry.
+
+        # Zeroconf already updates the IP on its own, but mDNS does not cross
+        # subnet boundaries - which is exactly the setup where a lock sits in
+        # its own IoT VLAN. Without this step the only way to follow a changed
+        # address was to delete and re-add the integration, losing entity ids,
+        # history and every automation referring to them.
+
+        # The serial number stays fixed: it is the unique id of the entry and
+        # the basis of every entity id. A different serial is a different lock,
+        # and therefore a different entry.
+        
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        errors = {}
+
+        if user_input is not None:
+            # An empty password field means "keep the current one", so the
+            # stored secret never has to be shown in the form.
+            password = user_input.get(CONF_PASSWORD) or entry.data[CONF_PASSWORD]
+
+            new_data = {
+                **entry.data,
+                CONF_IP_ADDRESS: user_input[CONF_IP_ADDRESS],
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: password,
+            }
+
+            try:
+                client = await self.hass.async_add_executor_job(
+                    lambda: DoorClient(
+                        serial_number=new_data["serial_number"],
+                        ip=new_data[CONF_IP_ADDRESS],
+                        password=new_data[CONF_PASSWORD],
+                        username=new_data[CONF_USERNAME]
+                    )
+                )
+
+                # Verify before storing, so a typo cannot replace a working
+                # address with an unreachable one.
+                if await self.hass.async_add_executor_job(client.connect):
+                    self.hass.config_entries.async_update_entry(entry, data=new_data)
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(entry.entry_id)
+                    )
+                    return self.async_abort(reason="reconfigure_successful")
+                else:
+                    errors["base"] = "cannot_connect"
+
+            except requests.exceptions.HTTPError as err:
+                if err.response.status_code == 401:
+                    errors["base"] = "invalid_auth"
+                else:
+                    errors["base"] = "cannot_connect"
+            except Exception:
+                errors["base"] = "unknown"
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_IP_ADDRESS,
+                    default=entry.data[CONF_IP_ADDRESS]
+                ): cv.string,
+                vol.Required(
+                    CONF_USERNAME,
+                    default=entry.data[CONF_USERNAME]
+                ): cv.string,
+                vol.Optional(CONF_PASSWORD): cv.string,
+            }),
+            description_placeholders={
+                "serial_number": entry.data["serial_number"]
+            },
+            errors=errors
+        )
+
     async def _validate_and_create(self, data):
         errors = {}
         await self.async_set_unique_id(data["serial_number"])

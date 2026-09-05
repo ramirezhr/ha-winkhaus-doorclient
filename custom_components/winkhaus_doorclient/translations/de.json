@@ -40,6 +40,15 @@
                 "data": {
                     "password": "Neues Passwort"
                 }
+            },
+            "reconfigure": {
+                "title": "Verbindungsdaten ändern",
+                "description": "Ändere, wie Home Assistant das Schloss mit der Seriennummer **{serial_number}** erreicht.\n\nLass das Passwortfeld leer, um das bisherige beizubehalten. Die Seriennummer lässt sich nicht ändern - ein anderes Schloss braucht einen eigenen Eintrag.",
+                "data": {
+                    "ip_address": "IP-Adresse",
+                    "username": "Benutzername",
+                    "password": "Neues Passwort (optional)"
+                }
             }
         },
         "error": {
@@ -50,7 +59,8 @@
         "abort": {
             "already_configured": "Dieses Gerät ist bereits konfiguriert.",
             "no_devices_found": "Keine Winkhaus Geräte im Netzwerk gefunden.",
-            "reauth_successful": "Passwort erfolgreich aktualisiert!"
+            "reauth_successful": "Passwort erfolgreich aktualisiert!",
+            "reconfigure_successful": "Verbindungsdaten erfolgreich aktualisiert!"
         }
     },
     "options": {
@@ -81,15 +91,52 @@
                 "state": {
                     "none": "Kein Fehler",
                     "overcurrent": "Überstrom",
-					"blocked": "Motor blockiert",
+                    "blocked": "Motor blockiert",
                     "batterylow": "Batterie schwach"
                 }
+            },
+            "lock_cnt": {
+                "name": "Schließvorgänge"
+            },
+            "unlock_cnt": {
+                "name": "Öffnungsvorgänge"
+            },
+            "error_cnt": {
+                "name": "Fehleranzahl"
+            },
+            "connection_mode": {
+                "name": "Verbindungsmodus"
             }
         },
-		"button": {
+        "button": {
             "clear_errors": {
                 "name": "Fehler zurücksetzen"
             }
+        },
+        "lock": {
+            "lock": {
+                "name": "Schloss"
+            }
+        },
+        "select": {
+            "mode": {
+                "name": "Modus",
+                "state": {
+                    "day": "Tag",
+                    "night": "Nacht"
+                }
+            }
+        },
+        "binary_sensor": {
+            "door": {
+                "name": "Tür"
+            }
+        }
+    },
+    "issues": {
+        "device_unreachable": {
+            "title": "Winkhaus Tür nicht erreichbar",
+            "description": "Das Schloss mit der Seriennummer {serial} hat bei {failures} Aktualisierungen in Folge nicht geantwortet.\n\n- Ist das Gerät eingeschaltet und mit dem Netzwerk verbunden?\n- Kannst du es von Home Assistant aus erreichen?\n- Falls sich die IP-Adresse geändert hat, öffne das Drei-Punkte-Menü der Integration und wähle **Neu konfigurieren**, um Home Assistant auf die neue Adresse zu verweisen.\n\nDiese Meldung verschwindet von selbst, sobald das Schloss wieder antwortet."
         }
     }
 }

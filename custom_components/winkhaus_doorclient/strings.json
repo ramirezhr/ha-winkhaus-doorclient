@@ -37,6 +37,15 @@
                 "data": {
                     "password": "New Password"
                 }
+            },
+            "reconfigure": {
+                "title": "Update Connection Settings",
+                "description": "Change how Home Assistant reaches the lock with serial number {serial_number}.\n\nLeave the password empty to keep the current one. The serial number cannot be changed - a different lock needs its own entry.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "username": "Username",
+                    "password": "New Password (optional)"
+                }
             }
         },
         "error": {
@@ -47,7 +56,8 @@
         "abort": {
             "already_configured": "Device is already configured",
             "no_devices_found": "No Winkhaus devices found in network",
-            "reauth_successful": "Password successfully updated!"
+            "reauth_successful": "Password successfully updated!",
+            "reconfigure_successful": "Connection settings updated!"
         }
     },
     "options": {
@@ -78,15 +88,52 @@
                 "state": {
                     "none": "No Error",
                     "overcurrent": "Overcurrent",
-					"blocked": "Motor Blocked",
+                    "blocked": "Motor Blocked",
                     "batterylow": "Low Battery"
                 }
+            },
+            "lock_cnt": {
+                "name": "Lock Count"
+            },
+            "unlock_cnt": {
+                "name": "Unlock Count"
+            },
+            "error_cnt": {
+                "name": "Error Count"
+            },
+            "connection_mode": {
+                "name": "Connection Mode"
             }
         },
-		"button": {
+        "button": {
             "clear_errors": {
                 "name": "Clear Errors"
             }
+        },
+        "lock": {
+            "lock": {
+                "name": "Lock"
+            }
+        },
+        "select": {
+            "mode": {
+                "name": "Mode",
+                "state": {
+                    "day": "Day",
+                    "night": "Night"
+                }
+            }
+        },
+        "binary_sensor": {
+            "door": {
+                "name": "Door"
+            }
+        }
+    },
+    "issues": {
+        "device_unreachable": {
+            "title": "Winkhaus door unreachable",
+            "description": "The lock with serial number {serial} has not responded for {failures} consecutive updates.\n\n- Is the device powered on and connected to the network?\n- Can you reach it from Home Assistant?\n- If its IP address changed, open the integration's three-dot menu and choose **Reconfigure** to point Home Assistant at the new address.\n\nThis message disappears on its own once the lock responds again."
         }
     }
 }

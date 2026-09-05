@@ -47,7 +47,7 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
         self._client = client
         self._attr_unique_id = entry.data["serial_number"]
         self.entity_id = build_entity_id("lock", entry.data["serial_number"], "lock")
-        self._attr_name = "Lock"
+        self._attr_translation_key = "lock"
         self._attr_device_info = device_info
         self._attr_supported_features = LockEntityFeature.OPEN
 

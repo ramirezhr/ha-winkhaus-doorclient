@@ -82,6 +82,20 @@ This integration communicates directly with your door controller over the local 
    * **Search via Network:** Auto-scan for devices
    * **Manual Input:** Enter Serial Number and IP Address
 
+### Changing Connection Settings
+
+If the lock's IP address, user name or password changes, there is no need to
+remove and re-add the integration - which would lose entity IDs, history and
+every automation referring to them.
+
+**Settings → Devices & Services → Winkhaus Door → ⋮ → Reconfigure**
+
+Leave the password field empty to keep the current one. The serial number
+cannot be changed, since a different lock needs its own entry.
+
+> Discovered devices usually update their IP on their own via Zeroconf. That
+> only works within a subnet, so a lock in a separate IoT VLAN needs this step.
+
 ---
 
 ## 🔧 Connection Modes
@@ -134,7 +148,7 @@ installation. The examples below use the serial `SERIAL123`.
 | `sensor.winkhaus_door_serial123_lock_cnt` | Sensor | Total lock operations |
 | `sensor.winkhaus_door_serial123_unlock_cnt` | Sensor | Total unlock operations |
 | `sensor.winkhaus_door_serial123_error_cnt` | Sensor | Error counter |
-| `sensor.winkhaus_door_serial123_error_state` | Sensor | Current fault (diagnostic) |
+| `sensor.winkhaus_door_serial123_error_state` | Sensor | Current fault, with `all_errors` and `error_count` attributes (diagnostic) |
 | `sensor.winkhaus_door_serial123_connection_mode` | Sensor | Hybrid or Polling (diagnostic) |
 
 **Display names** follow the name configured on the lock itself. A door named
@@ -390,6 +404,20 @@ reaches more than a few hours
 
 ---
 
+## 📋 Diagnostics
+
+When reporting a problem, attach a diagnostics export - it saves a round of
+questions:
+
+**Settings → Devices & Services → Winkhaus Door → ⋮ → Download Diagnostics**
+
+The file contains the connection state, session and reconnect counters, both
+coordinator intervals, the protocol counters and the lock's firmware and
+counters. Serial number, IP addresses, user name and password are removed
+automatically, so the file is safe to attach to a public issue.
+
+---
+
 ## 🐛 Debug Logging
 
 Enable detailed logging:
@@ -435,6 +463,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## 📚 Additional Resources
 
+- **Roadmap:** [What's planned and what isn't](ROADMAP.md)
 - **Documentation:** [GitHub Wiki](https://github.com/ramirezhr/ha-winkhaus-doorclient/wiki)
 - **Issues:** [GitHub Issues](https://github.com/ramirezhr/ha-winkhaus-doorclient/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/ramirezhr/ha-winkhaus-doorclient/discussions)
@@ -445,7 +474,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## 🙏 Credits
 
 - **Integration Author:** [@ramirezhr](https://github.com/ramirezhr)
-- **Protocol:** Reverse engineered from the official client
+- **Protocol:** Worked out by observing the device's local API, plus a good deal of trial and error
 - **Hardware:** [Winkhaus blueMotion+ / EAV4+](https://www.winkhaus.de/)
 
 ---

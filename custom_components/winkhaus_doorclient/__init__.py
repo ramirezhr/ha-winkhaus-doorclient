@@ -4,7 +4,7 @@ from datetime import timedelta
 import logging
 import asyncio
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.components import persistent_notification
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -58,9 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if consecutive_failures > 0:
                 _LOGGER.info(f"[COORDINATOR {serial}] Connection restored after {consecutive_failures} failures")
                 
-                persistent_notification.async_dismiss(
-                    hass, f"winkhaus_{serial}_offline"
-                )
+                ir.async_delete_issue(hass, DOMAIN, f"unreachable_{serial}")
                 
                 consecutive_failures = 0
             
@@ -87,18 +85,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         f"Device may be offline or unreachable."
                     )
                 
-                    persistent_notification.async_create(
+                    # A repair issue instead of a notification: it shows up
+                    # in the Repairs dashboard, survives a restart and points
+                    # at the reconfigure flow, which is where a changed IP is
+                    # actually fixed.
+                    ir.async_create_issue(
                         hass,
-                        title="Winkhaus Door Connection Issue",
-                        message=(
-                            f"Your Winkhaus door ({serial}) has been unreachable for "
-                            f"{consecutive_failures} consecutive updates.\n\n"
-                            f"Please check:\n"
-                            f"- Is the device powered on?\n"
-                            f"- Is the network connection stable?\n"
-                            f"- Can you ping the device from Home Assistant?"
-                        ),
-                        notification_id=f"winkhaus_{serial}_offline"
+                        DOMAIN,
+                        f"unreachable_{serial}",
+                        is_fixable=False,
+                        severity=ir.IssueSeverity.WARNING,
+                        translation_key="device_unreachable",
+                        translation_placeholders={
+                            "serial": serial,
+                            "failures": str(consecutive_failures),
+                        },
                     )
                 
                 return coordinator.data
@@ -270,6 +271,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Waiting 2 seconds to let the lock release its sockets...")
             await asyncio.sleep(2)
             # ------------------------------------------
+
+        # An unreachable-device issue must not outlive the entry it belongs
+        # to, or it lingers in the Repairs dashboard with nothing to fix.
+        serial = entry.data.get("serial_number", "Unknown")
+        ir.async_delete_issue(hass, DOMAIN, f"unreachable_{serial}")
 
         hass.data[DOMAIN].pop(entry.entry_id)
         

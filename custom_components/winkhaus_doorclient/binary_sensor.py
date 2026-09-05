@@ -35,7 +35,7 @@ class WinkhausDoorSensor(CoordinatorEntity, BinarySensorEntity):
         self._client = client
         self._attr_unique_id = f"{entry.data['serial_number']}_door_state"
         self.entity_id = build_entity_id("binary_sensor", entry.data['serial_number'], "door")
-        self._attr_name = "Door"
+        self._attr_translation_key = "door"
         self._attr_device_class = BinarySensorDeviceClass.DOOR
         
         self._attr_device_info = device_info

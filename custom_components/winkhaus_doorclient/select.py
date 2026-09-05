@@ -34,7 +34,7 @@ class WinkhausModeSelect(CoordinatorEntity, SelectEntity):
         self._client = client
         self._attr_unique_id = f"{entry.data['serial_number']}_mode"
         self.entity_id = build_entity_id("select", entry.data['serial_number'], "mode")
-        self._attr_name = "Mode"
+        self._attr_translation_key = "mode"
         self._attr_options = MODES
         
         self._attr_device_info = device_info

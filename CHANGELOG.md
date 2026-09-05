@@ -1,18 +1,24 @@
 # Changelog
 
+## [2.5.0] - 2026-08-30
+
+### Changed
+- **Entity Names Now Translated:** Only two entities carried a translation key, so a German installation showed a mix: "Haustür Fehlerstatus" next to "Haustür Lock Count". Every entity now takes its name from the translation files, and the German set has been completed. Entity IDs are unaffected - they follow the serial number since 2.4.2 and do not depend on the display name. For the counter sensors the payload key doubles as the translation key, so each one is named in exactly one place.
+- **Mode Options Translated:** The day/night selector listed its options as the raw values `day` and `night`. They are now translated as well. The stored values are unchanged, so automations and scripts referring to them keep working.
+
+### Added
+- **Reconfigure Flow:** Connection settings of an existing entry can now be changed from the integration's menu. Zeroconf keeps the IP up to date on its own, but mDNS does not cross subnet boundaries - precisely the setup a lock in a separate IoT VLAN lives in. Until now a changed address meant deleting and re-adding the integration, which discarded entity IDs, history and every automation built on them. The new address is verified before it is stored, an empty password field keeps the existing one, and the serial number stays fixed because it identifies the entry.
+- **Repair Issue for an Unreachable Device:** The notification shown after three failed updates has become a repair issue. It appears in the Repairs dashboard, survives a restart, names the number of failed attempts and points at the reconfigure flow for the case where the address has changed. It clears itself as soon as the lock responds again, and is removed when the entry is unloaded.
+- **Diagnostics Download:** The device page now offers a diagnostics export covering the connection state, session and reconnect counters, both coordinator intervals, the internal protocol counters and the lock's own firmware and operation counts. Serial number, IP addresses, user name and password are redacted, so the file can be attached to a public issue as it is.
+
+### Fixed
+- **Untranslated State on Multiple Faults:** When the lock reported more than one fault at a time, the error sensor joined them into a single state such as `blocked, overcurrent`. No translation exists for a combined value, so the dashboard fell back to the raw English string. The state now carries the first fault, which always has a translation, and the complete list is available through the new `all_errors` and `error_count` attributes - so nothing is lost and automations can react to either.
+- **Entity Name Not Translated:** The error sensor set both an explicit name and a translation key. The explicit name won, so the entity stayed "Error State" in every language while only its states were translated. The name now comes from the translations as intended.
+
 ## [2.4.2] - 2026-08-16
 
 ### Fixed
-- **Non-Deterministic Entity IDs:** Since 2.3.0 the device carries the name
-  configured on the lock, and Home Assistant derives entity ids from the device
-  name. That made the ids depend on a value the user can change - and one that
-  is not even known yet if the configuration request fails during the very first
-  setup, in which case the placeholder name was used instead. Two identical
-  installations could therefore end up with different entity ids. Entity ids are
-  now built from the serial number, which is stable and already the basis of
-  every unique id. The lock's name remains in use for the friendly name, where
-  it belongs. Existing entities keep their current ids; Home Assistant only
-  assigns an id once, so nothing breaks in automations.
+- **Non-Deterministic Entity IDs:** Since 2.3.0 the device carries the name configured on the lock, and Home Assistant derives entity ids from the device name. That made the ids depend on a value the user can change - and one that is not even known yet if the configuration request fails during the very first setup, in which case the placeholder name was used instead. Two identical installations could therefore end up with different entity ids. Entity ids are now built from the serial number, which is stable and already the basis of every unique id. The lock's name remains in use for the friendly name, where it belongs. Existing entities keep their current ids; Home Assistant only assigns an id once, so nothing breaks in automations.
 
 ## [2.4.1] - 2026-08-15
 
