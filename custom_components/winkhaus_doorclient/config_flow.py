@@ -31,6 +31,43 @@ from .api import DoorClient
 
 _LOGGER = logging.getLogger(__name__)
 
+# How long to listen for announcements during a manual network scan.
+DISCOVERY_TIMEOUT = 3
+
+# Property keys a lock may publish its serial number under. Firmware
+# versions differ, so all of them are tried in order.
+SERIAL_PROPERTY_KEYS = (b"serial", b"sn", b"id", b"mac")
+
+
+def parse_discovered_device(name: str, info) -> tuple[str, str] | None:
+    """Turn a zeroconf service record into a (serial, ip) pair.
+
+    Returns None when the record carries no usable address. The service
+    name is the fallback serial for firmware that publishes none.
+    """
+    if not info or not getattr(info, "addresses", None):
+        return None
+
+    try:
+        ip = socket.inet_ntoa(info.addresses[0])
+    except (OSError, TypeError, ValueError):
+        return None
+
+    serial = name.split(".")[0]
+    properties = getattr(info, "properties", None) or {}
+
+    for key in SERIAL_PROPERTY_KEYS:
+        raw = properties.get(key)
+        if raw is None:
+            continue
+        try:
+            serial = raw.decode("utf-8")
+            break
+        except (AttributeError, UnicodeDecodeError):
+            continue
+
+    return serial, ip
+
 class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
@@ -52,36 +89,24 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_scan(self, user_input=None):
-        if user_input is None:
-            pass
-
         aio_zc = await async_get_instance(self.hass)
         found = {}
 
         def on_service_state_change(zeroconf, service_type, name, state_change):
-            if state_change.name == "Added":
-                info = zeroconf.get_service_info(service_type, name)
-                if info:
-                    try:
-                        ip = socket.inet_ntoa(info.addresses[0])
-                        serial = name.split(".")[0] 
-                        properties = info.properties
-                        for key in [b"serial", b"sn", b"id", b"mac"]:
-                            if key in properties:
-                                try:
-                                    decoded_serial = properties[key].decode("utf-8")
-                                    serial = decoded_serial
-                                    break
-                                except: pass
-                        
-                        found[serial] = ip
-                    except Exception:
-                        pass
+            if state_change.name != "Added":
+                return
+            parsed = parse_discovered_device(
+                name, zeroconf.get_service_info(service_type, name)
+            )
+            if parsed:
+                found[parsed[0]] = parsed[1]
 
-        browser = ServiceBrowser(aio_zc, "_whdc-device._tcp.local.", handlers=[on_service_state_change])
-        
+        browser = ServiceBrowser(
+            aio_zc, "_whdc-device._tcp.local.", handlers=[on_service_state_change]
+        )
+
         try:
-            await asyncio.sleep(3)
+            await asyncio.sleep(DISCOVERY_TIMEOUT)
         finally:
             browser.cancel()
         
@@ -230,18 +255,18 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reconfigure(self, user_input=None):
-        # Change connection settings of an existing entry.
+        """Change connection settings of an existing entry.
 
-        # Zeroconf already updates the IP on its own, but mDNS does not cross
-        # subnet boundaries - which is exactly the setup where a lock sits in
-        # its own IoT VLAN. Without this step the only way to follow a changed
-        # address was to delete and re-add the integration, losing entity ids,
-        # history and every automation referring to them.
+        Zeroconf already updates the IP on its own, but mDNS does not cross
+        subnet boundaries - which is exactly the setup where a lock sits in
+        its own IoT VLAN. Without this step the only way to follow a changed
+        address was to delete and re-add the integration, losing entity ids,
+        history and every automation referring to them.
 
-        # The serial number stays fixed: it is the unique id of the entry and
-        # the basis of every entity id. A different serial is a different lock,
-        # and therefore a different entry.
-        
+        The serial number stays fixed: it is the unique id of the entry and
+        the basis of every entity id. A different serial is a different lock,
+        and therefore a different entry.
+        """
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         errors = {}
 

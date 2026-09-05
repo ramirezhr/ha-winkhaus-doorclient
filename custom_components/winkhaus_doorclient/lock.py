@@ -70,9 +70,13 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
             key = item["name"]
             value = item["value"]
             
-            if key == "time" and isinstance(value, (int, float)):
-                attributes["last_update_from_device"] = self._device_time_to_iso(value)
-            elif key not in ["time"]:
+            if key == "time":
+                # _device_time_to_iso validates the value itself and returns
+                # None for anything it cannot make sense of.
+                timestamp = self._device_time_to_iso(value)
+                if timestamp:
+                    attributes["last_update_from_device"] = timestamp
+            else:
                 attributes[key] = value
         
         # --- ADD CONNECTION TRACKING ATTRIBUTES ---
@@ -123,7 +127,7 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
         """
         try:
             return dt_util.utc_from_timestamp(float(value)).isoformat()
-        except (OverflowError, OSError, ValueError):
+        except (OverflowError, OSError, TypeError, ValueError):
             # Lock reported a nonsensical timestamp (e.g. uninitialised clock)
             return None
 

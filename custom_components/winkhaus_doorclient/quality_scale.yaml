@@ -1,0 +1,152 @@
+# Home Assistant Integration Quality Scale
+#
+# Status of each rule for this integration. This is a custom integration, so
+# nothing here is verified by Home Assistant - the file exists to keep the
+# work towards Bronze honest and to record why some rules do not apply.
+#
+# Status values: done | todo | exempt
+
+rules:
+  # ---------------------------------------------------------------------
+  # BRONZE
+  # ---------------------------------------------------------------------
+
+  config-flow: done
+  # UI setup with auto-discovery and manual entry.
+
+  entity-unique-id: done
+  # Every entity derives its unique id from the serial number.
+
+  has-entity-name: done
+  # All platforms set _attr_has_entity_name = True.
+
+  unique-config-entry: done
+  # The serial number is the entry's unique id; duplicates are aborted.
+
+  test-before-configure: done
+  # config_flow verifies the connection before an entry is created.
+
+  test-before-setup: done
+  # async_config_entry_first_refresh raises ConfigEntryNotReady, which is
+  # passed through since 2.4.1 so Home Assistant retries with backoff.
+
+  appropriate-polling: done
+  # Hybrid mode polls every 120s as a safety net beside the WebSocket push;
+  # polling mode is user configurable between 30 and 300 seconds.
+
+  brands: done
+  # Logo and icon are published under custom_integrations in the brands repo.
+
+  entity-event-setup: done
+  # The push callback is wired up during setup and torn down in stop().
+
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-actions: done
+  docs-removal-instructions: todo
+  # README lacks a section on removing the integration cleanly.
+
+  runtime-data: todo
+  # Still uses hass.data[DOMAIN][entry.entry_id]. Should move to
+  # entry.runtime_data with a typed dataclass. Touches every platform.
+
+  common-modules: todo
+  # Coordinators live in __init__.py and every entity repeats the
+  # device_info wiring. Needs coordinator.py and a shared entity.py base.
+
+  config-flow-test-coverage: done
+  # 100% of config_flow.py, covering every step and every failure path.
+
+  action-setup: todo
+  # Entity services are registered in the lock platform. Review whether
+  # they belong in async_setup.
+
+  dependency-transparency: exempt
+  # The protocol implementation lives inside this repository rather than in
+  # a separate PyPI package. Splitting it out would mean maintaining two
+  # repositories for a single-device integration.
+
+  # ---------------------------------------------------------------------
+  # SILVER
+  # ---------------------------------------------------------------------
+
+  config-entry-unloading: done
+  # stop() closes the WebSocket and cancels the watchdog, followed by a
+  # short cooldown so the lock can release its sockets.
+
+  reauthentication-flow: done
+  integration-owner: done
+  docs-configuration-parameters: done
+
+  docs-installation-parameters: done
+
+  parallel-updates: todo
+  # PARALLEL_UPDATES is not declared in any platform.
+
+  action-exceptions: todo
+  # Services log failures instead of raising HomeAssistantError or
+  # ServiceValidationError.
+
+  log-when-unavailable: todo
+  # The coordinator logs every failed attempt. Should log once when the
+  # device becomes unavailable and once when it returns.
+
+  test-coverage: todo
+  # Silver wants 95% across all modules. The hard part is api.py, where
+  # meaningful tests have to produce valid AES-CCM frames.
+
+  entity-unavailable: exempt
+  # Deliberate deviation. The coordinator keeps the last known state
+  # instead of marking entities unavailable, because for a door lock a
+  # status from two minutes ago is more useful than a greyed-out card.
+  # Revisit if this ever misleads anyone.
+
+  # ---------------------------------------------------------------------
+  # GOLD
+  # ---------------------------------------------------------------------
+
+  devices: done
+  diagnostics: done
+  discovery: done
+  discovery-update-info: done
+  # Zeroconf updates the IP of a configured lock automatically.
+
+  entity-category: done
+  entity-translations: done
+  reconfiguration-flow: done
+  repair-issues: done
+
+  icon-translations: todo
+  # Icons are set with _attr_icon in code; should move to icons.json.
+
+  exception-translations: todo
+
+  docs-known-limitations: todo
+  docs-use-cases: todo
+  docs-supported-devices: todo
+  # blueMotion+ and EAV4+ are mentioned but not listed properly.
+
+  entity-device-class: todo
+  # Door and duration classes are set; the error sensor could use ENUM,
+  # but the full fault vocabulary of the firmware is unknown, so an
+  # unexpected code would invalidate the sensor instead of just showing
+  # an untranslated string.
+
+  dynamic-devices: exempt
+  stale-devices: exempt
+  # One config entry represents exactly one lock. There are no devices
+  # appearing or disappearing behind a single entry.
+
+  # ---------------------------------------------------------------------
+  # PLATINUM
+  # ---------------------------------------------------------------------
+
+  async-dependency: todo
+  # The HTTP layer uses requests through the executor. Core-grade
+  # integrations need an async library - this is the architectural change
+  # behind the 3.0.0 plan.
+
+  inject-websession: todo
+  # Follows from the aiohttp migration.
+
+  strict-typing: todo
