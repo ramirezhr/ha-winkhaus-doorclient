@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.5.1] - 2026-09-10
+
+### Added
+- **Test Suite:** The integration now ships with 108 tests covering the pure logic that has caused problems in the field - entity ID building, uptime formatting past 24 hours, timestamp conversion, command resolution, state parsing, fault handling, push merging, counter monotonicity and fragment reassembly - plus the complete config flow at 100% coverage. Two guard tests deserve a mention: one keeps `locked` out of the numeric status map, where it would invert the lock state because `bool` is a subclass of `int`, and one keeps a cleared fault from being inherited through a merge. The crypto handshake and the wire protocol stay untested, since they need real hardware and a mock would only verify the mock.
+
+### Changed
+- **Discovery Parsing Extracted:** The code turning a Zeroconf announcement into a serial number and address lived in a nested function inside the scan step and could not be tested. It is now a module-level function with its own tests, covering every property key the firmware may use, the fallback to the service name, and records carrying no usable address. A bare `except:` that also swallowed keyboard interrupts was replaced with specific exception handling, an unreachable branch was removed, and the discovery timeout became a named constant.
+
+### Fixed
+- **Timestamp Conversion on Unexpected Input:** `_device_time_to_iso` caught overflow, OS and value errors but not `TypeError`, so a timestamp of an unexpected type would have raised out of a property. The caller guarded against that with its own type check, which in turn meant a timestamp arriving as a string was dropped entirely instead of being converted - the method handles strings perfectly well. The duplicate check is gone and the method now validates the value on its own. Found by a test rather than in the field.
+
 ## [2.5.0] - 2026-08-30
 
 ### Changed
