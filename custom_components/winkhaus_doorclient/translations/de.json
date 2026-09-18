@@ -107,7 +107,11 @@
                 "name": "Fehleranzahl"
             },
             "connection_mode": {
-                "name": "Verbindungsmodus"
+                "name": "Verbindungsmodus",
+                "state": {
+                    "push": "Push",
+                    "polling": "Polling"
+                }
             }
         },
         "button": {
@@ -143,7 +147,7 @@
     },
     "exceptions": {
         "command_failed": {
-            "message": "Das Schloss war nicht erreichbar, um '{command}' auszuführen."
+            "message": "Das Schloss war nicht erreichbar, um den Befehl {command} auszuführen."
         },
         "mode_failed": {
             "message": "Das Schloss war nicht erreichbar, um in den Modus {mode} zu wechseln."

@@ -104,7 +104,11 @@
                 "name": "Error Count"
             },
             "connection_mode": {
-                "name": "Connection Mode"
+                "name": "Connection Mode",
+                "state": {
+                    "push": "Push",
+                    "polling": "Polling"
+                }
             }
         },
         "button": {
@@ -140,7 +144,7 @@
     },
     "exceptions": {
         "command_failed": {
-            "message": "Could not reach the lock to run '{command}'."
+            "message": "Could not reach the lock to run the {command} command."
         },
         "mode_failed": {
             "message": "Could not reach the lock to switch to {mode} mode."

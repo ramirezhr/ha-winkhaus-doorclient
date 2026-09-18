@@ -29,7 +29,7 @@
             "connection_mode": {
                 "default": "mdi:lan-connect",
                 "state": {
-                    "Polling": "mdi:cached"
+                    "polling": "mdi:cached"
                 }
             }
         }
