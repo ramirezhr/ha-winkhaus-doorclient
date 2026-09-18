@@ -14,11 +14,11 @@ from typing import Any
 
 import websockets
 from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, CONF_UPDATE_MODE, MODE_HYBRID
+from .const import CONF_UPDATE_MODE, MODE_HYBRID
+from .coordinator import WinkhausConfigEntry
 
 # Diagnostics end up pasted into public issue reports, so anything that
 # identifies the installation or its network is removed. Redaction is
@@ -36,7 +36,7 @@ TO_REDACT = {
 }
 
 
-def _describe_last_request(client) -> dict[str, Any] | None:
+def _describe_last_request(client: Any) -> dict[str, Any] | None:
     """The most recent WebSocket request, without its payload contents."""
     if not client._last_request:
         return None
@@ -50,14 +50,13 @@ def _describe_last_request(client) -> dict[str, Any] | None:
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: WinkhausConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    stored = hass.data[DOMAIN][entry.entry_id]
-    client = stored["client"]
-    coordinator = stored["coordinator"]
-    system_coordinator = stored["system_coordinator"]
-    device_info = stored["device_info"]
+    client = entry.runtime_data.client
+    coordinator = entry.runtime_data.coordinator
+    system_coordinator = entry.runtime_data.system_coordinator
+    device_info = entry.runtime_data.device_info
 
     update_mode = entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID)
 
@@ -83,7 +82,7 @@ async def async_get_config_entry_diagnostics(
                 if client.last_message_time
                 else None
             ),
-            "websockets_version": websockets.__version__,
+            "websockets_version": getattr(websockets, "__version__", "unknown"),
         },
         "protocol": {
             # Counters and buffers of the hand-rolled WebSocket protocol.

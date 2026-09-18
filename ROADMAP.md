@@ -2,75 +2,34 @@
 
 Where this integration is heading, and what it deliberately will not do.
 
-Current release: **2.5.0**
+Current release: **2.6.0**
 
 ---
 
-## Next up
+## Done
 
-### Reconsider the lock entity name
+Everything that was on this list has been built. The integration meets all
+forty-three rules of the Home Assistant quality scale or records an
+exception with its reasoning; `quality_scale.yaml` has the detail.
 
-"Front Door Lock" reads slightly redundant in German ("Haustür Schloss").
-Home Assistant's convention for the primary entity of a device is to name it
-after the device itself. Worth a decision, not urgent.
+**Structure.** Runtime data lives on the config entry, the coordinators are
+classes in `coordinator.py`, and a shared base in `entity.py` handles the
+identity wiring every platform used to repeat.
 
----
+**Tests.** 321 of them, 97% coverage, `api.py` at 100%. The listener tests
+build genuine AES-CCM frames and the handshake tests perform a real X25519
+exchange against a simulated lock, so they check agreement with a
+counterpart rather than with a mock. `mypy --strict` is clean.
 
-## Towards 3.0.0 - Bronze quality scale
+**Async throughout.** The HTTP layer uses `aiohttp` with Home Assistant's
+shared session; `websockets` was already async. Nothing runs on a worker
+thread except building the SSL context, which reads from disk and has to.
 
-The [quality scale](quality_scale.yaml) tracks every rule individually. This
-integration is not part of Home Assistant core, so nothing here is verified -
-the goal is the engineering discipline behind the rules, not a badge.
+## Open
 
-### Structural work
-
-**`runtime-data`** - move from `hass.data[DOMAIN][entry.entry_id]` to
-`entry.runtime_data` with a typed dataclass. Mechanical, touches every
-platform.
-
-**`common-modules`** - split the coordinators out of `__init__.py` into
-`coordinator.py`, and introduce a shared base class in `entity.py` so
-`device_info` is not wired up in every platform separately.
-
-### Test coverage
-
-Nothing is tested today. Every change so far was verified by running it on
-real hardware for days, which works for one maintainer and one lock but does
-not scale.
-
-Planned in three tiers:
-
-1. **Pure logic, no Home Assistant required.** Entity ID building, uptime
-   formatting, timestamp conversion, command resolution, state parsing,
-   fault handling, push merging, counter monotonicity, fragment reassembly.
-   This is where the real bugs have been, and it runs in milliseconds.
-2. **Config flow.** Required at 100% for Bronze. Every step plus the error
-   paths, with a mocked client.
-3. **Coordinator and setup.** Specifically the failures already fixed once:
-   `ConfigEntryNotReady` being swallowed, the repair issue lifecycle, and
-   keeping cached data instead of dropping entities.
-
-The crypto handshake and the wire protocol stay untested. They need real
-hardware; a mock would only verify the mock.
-
-### Cheap wins along the way
-
-Picked up while the structural work happens, because each has value on its
-own: `PARALLEL_UPDATES`, service actions raising proper exceptions, logging
-once on unavailability instead of on every attempt, moving icons into
-`icons.json`, translated exceptions, and the missing documentation sections.
-
-### The architectural change
-
-The HTTP layer uses `requests` through the executor. Core-grade integrations
-need an async library, so this eventually becomes `aiohttp` - including the
-legacy SSL context the door controller requires.
-
-This is the riskiest change in the project: it touches the crypto path, the
-protocol handling and both coordinators. It happens **after** the tests, not
-before.
-
----
+Nothing planned. Ideas are welcome as issues - particularly from anyone
+running an EAV4+ or a battery-powered model, since neither has been tested
+by the author.
 
 ## Not planned
 

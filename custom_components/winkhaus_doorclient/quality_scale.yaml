@@ -43,28 +43,28 @@ rules:
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-actions: done
-  docs-removal-instructions: todo
-  # README lacks a section on removing the integration cleanly.
+  docs-removal-instructions: done
 
-  runtime-data: todo
-  # Still uses hass.data[DOMAIN][entry.entry_id]. Should move to
-  # entry.runtime_data with a typed dataclass. Touches every platform.
+  runtime-data: done
+  # WinkhausRuntimeData on entry.runtime_data, with a typed ConfigEntry
+  # alias used by every platform.
 
-  common-modules: todo
-  # Coordinators live in __init__.py and every entity repeats the
-  # device_info wiring. Needs coordinator.py and a shared entity.py base.
+  common-modules: done
+  # coordinator.py holds both coordinators and the runtime data,
+  # entity.py the shared base for coordinator-driven entities.
 
   config-flow-test-coverage: done
   # 100% of config_flow.py, covering every step and every failure path.
 
-  action-setup: todo
-  # Entity services are registered in the lock platform. Review whether
-  # they belong in async_setup.
+  action-setup: done
+  # All three service actions are entity services, which the rule allows
+  # to be registered in the platform's async_setup_entry.
 
   dependency-transparency: exempt
   # The protocol implementation lives inside this repository rather than in
   # a separate PyPI package. Splitting it out would mean maintaining two
-  # repositories for a single-device integration.
+  # repositories for a single-device integration. Both remaining
+  # dependencies, aiohttp and websockets, are published and async.
 
   # ---------------------------------------------------------------------
   # SILVER
@@ -80,20 +80,21 @@ rules:
 
   docs-installation-parameters: done
 
-  parallel-updates: todo
-  # PARALLEL_UPDATES is not declared in any platform.
+  parallel-updates: done
 
-  action-exceptions: todo
-  # Services log failures instead of raising HomeAssistantError or
-  # ServiceValidationError.
+  action-exceptions: done
+  # Every entity action raises HomeAssistantError when the command did
+  # not get through. The client signals that by returning False rather
+  # than raising, so both outcomes are handled.
 
-  log-when-unavailable: todo
-  # The coordinator logs every failed attempt. Should log once when the
-  # device becomes unavailable and once when it returns.
+  log-when-unavailable: done
+  # Warned once when contact is lost, once when it returns; everything
+  # in between goes to debug.
 
-  test-coverage: todo
-  # Silver wants 95% across all modules. The hard part is api.py, where
-  # meaningful tests have to produce valid AES-CCM frames.
+  test-coverage: done
+  # 97% overall, api.py at 100%. The listener and handshake tests build
+  # genuine AES-CCM frames and perform a real X25519 exchange against a
+  # simulated lock, so they verify the protocol rather than a mock.
 
   entity-unavailable: exempt
   # Deliberate deviation. The coordinator keeps the last known state
@@ -116,21 +117,20 @@ rules:
   reconfiguration-flow: done
   repair-issues: done
 
-  icon-translations: todo
-  # Icons are set with _attr_icon in code; should move to icons.json.
+  icon-translations: done
+  # All icons live in icons.json, including the state-dependent ones for
+  # the mode selector and the connection mode sensor.
 
-  exception-translations: todo
+  exception-translations: done
 
-  docs-known-limitations: todo
-  docs-use-cases: todo
-  docs-supported-devices: todo
-  # blueMotion+ and EAV4+ are mentioned but not listed properly.
+  docs-known-limitations: done
+  docs-use-cases: done
+  docs-supported-devices: done
 
-  entity-device-class: todo
-  # Door and duration classes are set; the error sensor could use ENUM,
-  # but the full fault vocabulary of the firmware is unknown, so an
-  # unexpected code would invalidate the sensor instead of just showing
-  # an untranslated string.
+  entity-device-class: done
+  # The fault sensor declares the three documented codes as an enum, plus
+  # a catch-all so a code added by a future firmware is reported and
+  # logged rather than invalidating the sensor.
 
   dynamic-devices: exempt
   stale-devices: exempt
@@ -141,12 +141,16 @@ rules:
   # PLATINUM
   # ---------------------------------------------------------------------
 
-  async-dependency: todo
-  # The HTTP layer uses requests through the executor. Core-grade
-  # integrations need an async library - this is the architectural change
-  # behind the 3.0.0 plan.
+  async-dependency: done
+  # aiohttp for HTTP, websockets for the push connection. Nothing runs
+  # through the executor any more except building the SSL context, which
+  # touches the file system and has to.
 
-  inject-websession: todo
-  # Follows from the aiohttp migration.
+  inject-websession: done
+  # The client takes a session and an SSL context from the caller;
+  # async_create_client supplies Home Assistant's shared session.
 
-  strict-typing: todo
+  strict-typing: done
+  # mypy --strict is clean across all twelve modules. Two ignores remain:
+  # the websockets connection object has no stable public type, and Home
+  # Assistant does not re-export ZeroconfServiceInfo.

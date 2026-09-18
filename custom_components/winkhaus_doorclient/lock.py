@@ -1,31 +1,33 @@
 # in custom_components/winkhaus_doorclient/lock.py
 
 import logging
+from typing import Any
 import asyncio
 from homeassistant.components.lock import LockEntity, LockEntityFeature
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import entity_platform
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, build_entity_id
-from .api import DoorClient
+from .const import DOMAIN
+from .coordinator import WinkhausConfigEntry, WinkhausCoordinator
+from .entity import WinkhausEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+# All entities read from the same coordinator and every command goes to the
+# same lock, so there is nothing to serialise.
+PARALLEL_UPDATES = 0
+
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: WinkhausConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    client = data["client"]
-    coordinator = data["coordinator"]
-    device_info = data["device_info"] 
+    coordinator = entry.runtime_data.coordinator
     
-    async_add_entities([WinkhausLock(coordinator, client, entry, device_info)])
+    async_add_entities([WinkhausLock(coordinator, entry)])
     
     platform = entity_platform.async_get_current_platform()
 
@@ -39,31 +41,26 @@ async def async_setup_entry(
         "get_system_state", {}, "async_get_system_state"
     )
 
-class WinkhausLock(CoordinatorEntity, LockEntity):
-    _attr_has_entity_name = True
+class WinkhausLock(WinkhausEntity[WinkhausCoordinator], LockEntity):
+    _attr_supported_features = LockEntityFeature.OPEN
 
-    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry, device_info: dict) -> None:
-        super().__init__(coordinator)
-        self._client = client
-        self._attr_unique_id = entry.data["serial_number"]
-        self.entity_id = build_entity_id("lock", entry.data["serial_number"], "lock")
-        self._attr_translation_key = "lock"
-        self._attr_device_info = device_info
-        self._attr_supported_features = LockEntityFeature.OPEN
+    def __init__(self, coordinator: WinkhausCoordinator, entry: WinkhausConfigEntry) -> None:
+        # The lock predates the suffixed scheme: its unique id is the bare
+        # serial number, and changing it would orphan every existing entry.
+        super().__init__(coordinator, entry, "lock", "lock", unique_key="")
 
     @property
     def is_locked(self) -> bool | None:
         if not self.coordinator.data:
             return None
-        locked_state = next((item['value'] for item in self.coordinator.data if item['name'] == 'locked'), None)
-        return str(locked_state).lower() == 'true'
+        return str(self.state_value("locked")).lower() == "true"
 
     @property
-    def extra_state_attributes(self) -> dict | None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         if not self.coordinator.data:
             return None
         
-        attributes = {}
+        attributes: dict[str, Any] = {}
         
         # Add standard state attributes
         for item in self.coordinator.data:
@@ -81,19 +78,19 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
         
         # --- ADD CONNECTION TRACKING ATTRIBUTES ---
         # WebSocket connection status
-        attributes["websocket_connected"] = self._client.ws_connected
+        attributes["websocket_connected"] = self.client.ws_connected
         
         # Connection count
-        attributes["connection_count"] = self._client.connection_count
+        attributes["connection_count"] = self.client.connection_count
         
         # Current session uptime
-        uptime_seconds = self._client.get_current_uptime()
+        uptime_seconds = self.client.get_current_uptime()
         if uptime_seconds > 0:
             attributes["current_uptime"] = self._format_uptime(uptime_seconds)
             attributes["current_uptime_seconds"] = round(uptime_seconds, 1)
         else:
             attributes["current_uptime"] = "Not connected"
-            attributes["current_uptime_seconds"] = 0
+            attributes["current_uptime_seconds"] = 0.0
         # -------------------------------------------
 
         return attributes
@@ -131,24 +128,43 @@ class WinkhausLock(CoordinatorEntity, LockEntity):
             # Lock reported a nonsensical timestamp (e.g. uninitialised clock)
             return None
 
-    async def async_get_system_state(self):
+    async def _execute(self, command: str, value: str | None = None) -> None:
+        """Send a command and report a failure to the caller.
+
+        async_execute_command returns False when neither WebSocket nor HTTP
+        got through. Ignoring that left the user pressing a button with no
+        feedback at all, while the entity kept showing the old state.
+        """
+        if not await self.client.async_execute_command(command, value):
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={"command": value or command},
+            )
+
+    async def async_get_system_state(self) -> None:
         try:
-            state = await self.hass.async_add_executor_job(self._client.get_system_state)
-            _LOGGER.warning(f"SYSTEM STATE DUMP:\n{state}")
+            state = await self.client.get_system_state()
         except Exception as err:
-            _LOGGER.error(f"Error fetching system state: {err}")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="system_state_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
-    async def async_set_day_mode(self):
-        await self._client.async_execute_command("mode", "day")
+        _LOGGER.warning(f"SYSTEM STATE DUMP:\n{state}")
 
-    async def async_set_night_mode(self):
-        await self._client.async_execute_command("mode", "night")
+    async def async_set_day_mode(self) -> None:
+        await self._execute("mode", "day")
 
-    async def async_lock(self, **kwargs) -> None:
-        await self._client.async_execute_command("night")
+    async def async_set_night_mode(self) -> None:
+        await self._execute("mode", "night")
 
-    async def async_unlock(self, **kwargs) -> None:
-        await self._client.async_execute_command("day")
+    async def async_lock(self, **kwargs: Any) -> None:
+        await self._execute("night")
 
-    async def async_open(self, **kwargs) -> None:
-        await self._client.async_execute_command("open")
+    async def async_unlock(self, **kwargs: Any) -> None:
+        await self._execute("day")
+
+    async def async_open(self, **kwargs: Any) -> None:
+        await self._execute("open")

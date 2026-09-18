@@ -1,20 +1,26 @@
 import voluptuous as vol
+from typing import Any
+
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+from homeassistant.helpers.service_info.zeroconf import (  # type: ignore[attr-defined]
+    ZeroconfServiceInfo,
+)
 from homeassistant.components.zeroconf import async_get_instance
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
     SelectSelector,
+    SelectOptionDict,
     SelectSelectorConfig,
     SelectSelectorMode,
 )
 from zeroconf import ServiceBrowser
-import requests
+import aiohttp
 import logging
 import asyncio
 import socket
@@ -27,7 +33,7 @@ from .const import (
     MODE_HYBRID,
     MODE_POLLING
 )
-from .api import DoorClient
+from .coordinator import async_create_client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +45,7 @@ DISCOVERY_TIMEOUT = 3
 SERIAL_PROPERTY_KEYS = (b"serial", b"sn", b"id", b"mac")
 
 
-def parse_discovered_device(name: str, info) -> tuple[str, str] | None:
+def parse_discovered_device(name: str, info: Any) -> tuple[str, str] | None:
     """Turn a zeroconf service record into a (serial, ip) pair.
 
     Returns None when the record carries no usable address. The service
@@ -72,27 +78,35 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    def __init__(self):
-        self.discovery_info = {}
-        self.found_devices = {} 
-        self.reauth_entry = None
+    def __init__(self) -> None:
+        self.discovery_info: dict[str, Any] = {}
+        self.found_devices: dict[str, str] = {}
+        self.reauth_entry: Any = None
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "WinkhausOptionsFlowHandler":
         return WinkhausOptionsFlowHandler(config_entry)
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="user",
             menu_options=["scan", "manual"]
         )
 
-    async def async_step_scan(self, user_input=None):
+    async def async_step_scan(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         aio_zc = await async_get_instance(self.hass)
         found = {}
 
-        def on_service_state_change(zeroconf, service_type, name, state_change):
+        def on_service_state_change(
+            zeroconf: Any, service_type: str, name: str, state_change: Any
+        ) -> None:
             if state_change.name != "Added":
                 return
             parsed = parse_discovered_device(
@@ -117,7 +131,9 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
         return await self.async_step_pick()
 
-    async def async_step_pick(self, user_input=None):
+    async def async_step_pick(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             serial = user_input["device"]
             ip = self.found_devices[serial]
@@ -140,8 +156,10 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             })
         )
 
-    async def async_step_auth(self, user_input=None):
-        errors = {}
+    async def async_step_auth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         serial = self.discovery_info.get("serial_number", "Unknown")
         
         if user_input is not None:
@@ -162,7 +180,9 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors
         )
 
-    async def async_step_manual(self, user_input=None):
+    async def async_step_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             return await self._validate_and_create(user_input)
 
@@ -177,7 +197,9 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             last_step=False
         )
 
-    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo):
+    async def async_step_zeroconf(
+        self, discovery_info: ZeroconfServiceInfo
+    ) -> ConfigFlowResult:
         properties = discovery_info.properties
         serial_number = properties.get("serial_number") or properties.get("serial")
         ip_address = discovery_info.host
@@ -199,28 +221,35 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_auth()
 
-    async def async_step_reauth(self, entry_data: dict):
-        self.reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        self.reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        if self.reauth_entry is None:
+            return self.async_abort(reason="entry_not_found")
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reauth_confirm(self, user_input=None):
-        errors = {}
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             existing_data = self.reauth_entry.data
             password = user_input[CONF_PASSWORD]
 
             try:
-                client = await self.hass.async_add_executor_job(
-                    lambda: DoorClient(
-                        serial_number=existing_data["serial_number"],
-                        ip=existing_data[CONF_IP_ADDRESS],
-                        password=password,
-                        username=existing_data[CONF_USERNAME]
-                    )
+                client = await async_create_client(
+                    self.hass,
+                    serial_number=existing_data["serial_number"],
+                    ip=existing_data[CONF_IP_ADDRESS],
+                    password=password,
+                    username=existing_data[CONF_USERNAME],
                 )
 
-                if await self.hass.async_add_executor_job(client.connect):
+                if await client.connect():
                     self.hass.config_entries.async_update_entry(
                         self.reauth_entry,
                         data={
@@ -235,8 +264,8 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     errors["base"] = "cannot_connect"
 
-            except requests.exceptions.HTTPError as err:
-                if err.response.status_code == 401:
+            except aiohttp.ClientResponseError as err:
+                if err.status == 401:
                     errors["base"] = "invalid_auth"
                 else:
                     errors["base"] = "cannot_connect"
@@ -254,7 +283,9 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors
         )
 
-    async def async_step_reconfigure(self, user_input=None):
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Change connection settings of an existing entry.
 
         Zeroconf already updates the IP on its own, but mDNS does not cross
@@ -268,7 +299,11 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         and therefore a different entry.
         """
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        errors = {}
+        if entry is None:
+            # Only reachable if the entry was removed while the dialog was
+            # open. Aborting beats an AttributeError in the frontend.
+            return self.async_abort(reason="entry_not_found")
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             # An empty password field means "keep the current one", so the
@@ -283,18 +318,17 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
 
             try:
-                client = await self.hass.async_add_executor_job(
-                    lambda: DoorClient(
-                        serial_number=new_data["serial_number"],
-                        ip=new_data[CONF_IP_ADDRESS],
-                        password=new_data[CONF_PASSWORD],
-                        username=new_data[CONF_USERNAME]
-                    )
+                client = await async_create_client(
+                    self.hass,
+                    serial_number=new_data["serial_number"],
+                    ip=new_data[CONF_IP_ADDRESS],
+                    password=new_data[CONF_PASSWORD],
+                    username=new_data[CONF_USERNAME],
                 )
 
                 # Verify before storing, so a typo cannot replace a working
                 # address with an unreachable one.
-                if await self.hass.async_add_executor_job(client.connect):
+                if await client.connect():
                     self.hass.config_entries.async_update_entry(entry, data=new_data)
                     self.hass.async_create_task(
                         self.hass.config_entries.async_reload(entry.entry_id)
@@ -303,8 +337,8 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     errors["base"] = "cannot_connect"
 
-            except requests.exceptions.HTTPError as err:
-                if err.response.status_code == 401:
+            except aiohttp.ClientResponseError as err:
+                if err.status == 401:
                     errors["base"] = "invalid_auth"
                 else:
                     errors["base"] = "cannot_connect"
@@ -330,22 +364,21 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors
         )
 
-    async def _validate_and_create(self, data):
-        errors = {}
+    async def _validate_and_create(self, data: dict[str, Any]) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         await self.async_set_unique_id(data["serial_number"])
         self._abort_if_unique_id_configured()
 
         try:
-            client = await self.hass.async_add_executor_job(
-                lambda: DoorClient(
-                    serial_number=data["serial_number"],
-                    ip=data[CONF_IP_ADDRESS],
-                    password=data[CONF_PASSWORD],
-                    username=data[CONF_USERNAME]
-                )
+            client = await async_create_client(
+                self.hass,
+                serial_number=data["serial_number"],
+                ip=data[CONF_IP_ADDRESS],
+                password=data[CONF_PASSWORD],
+                username=data[CONF_USERNAME],
             )
 
-            if not await self.hass.async_add_executor_job(client.connect):
+            if not await client.connect():
                 errors["base"] = "cannot_connect"
             else:
                 return self.async_create_entry(
@@ -353,8 +386,8 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data=data
                 )
 
-        except requests.exceptions.HTTPError as err:
-            if err.response.status_code == 401:
+        except aiohttp.ClientResponseError as err:
+            if err.status == 401:
                 errors["base"] = "invalid_auth"
             else:
                 errors["base"] = "cannot_connect"
@@ -374,12 +407,14 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         # Use self._entry instead of self.config_entry (reserved by HA core)
         self._entry = config_entry
         self.options = dict(config_entry.options)
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self.options.update(user_input)
             if user_input[CONF_UPDATE_MODE] == MODE_POLLING:
@@ -395,8 +430,14 @@ class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_UPDATE_MODE, default=current_mode): SelectSelector(
                     SelectSelectorConfig(
                         options=[
-                            {"value": MODE_HYBRID, "label": "Hybrid (WebSockets + Fallback)"},
-                            {"value": MODE_POLLING, "label": "Classic Polling (HTTP only)"}
+                            SelectOptionDict(
+                                value=MODE_HYBRID,
+                                label="Hybrid (WebSockets + Fallback)",
+                            ),
+                            SelectOptionDict(
+                                value=MODE_POLLING,
+                                label="Classic Polling (HTTP only)",
+                            ),
                         ],
                         mode=SelectSelectorMode.DROPDOWN
                     )
@@ -404,7 +445,9 @@ class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
             })
         )
 
-    async def async_step_polling(self, user_input=None):
+    async def async_step_polling(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
             self.options.update(user_input)
             return self.async_create_entry(title="", data=self.options)
