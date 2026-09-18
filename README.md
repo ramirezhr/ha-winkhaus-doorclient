@@ -3,6 +3,7 @@
 [![GitHub Release](https://img.shields.io/github/release/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
 [![License](https://img.shields.io/github/license/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/blob/main/LICENSE)
 [![HACS](https://img.shields.io/badge/HACS-Default-orange?style=for-the-badge)](https://github.com/hacs/integration)
+[![Quality Scale](https://img.shields.io/badge/quality%20scale-platinum-e5e4e2?style=for-the-badge)](custom_components/winkhaus_doorclient/quality_scale.yaml)
 [![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue?style=for-the-badge)](https://github.com/ramirezhr)
 
 Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+ and EAV4+) via local API.
@@ -35,6 +36,75 @@ This integration communicates directly with your door controller over the local 
 * **🛡️ Network Resilience:** Maintains last known state during temporary outages
 * **🔄 Smart Reauth:** Automatic password update prompts via Repairs dashboard
 * **🏠 Multi-Lock Support:** Unlimited locks, each with independent WebSocket connection
+
+---
+
+## 🚪 Supported Devices
+
+Tested against **blueMotion+** (`BM+71003`, firmware 1.6.2) over its local
+HTTPS and WebSocket API.
+
+**EAV4+** is recognised by its serial number prefix and shown accordingly.
+The protocol is the same, but the model has not been tested by the author -
+reports either way are welcome.
+
+Battery-powered models are not covered. The lock reports a `battery` field
+that stays at `0` on mains-powered hardware, and the fault vocabulary
+includes `batterylow`, so such a device may work - but nothing here has been
+verified against one.
+
+Requirements:
+
+* The lock must be reachable on the local network (port 443 for HTTPS,
+  port 80 for the WebSocket)
+* One config entry per lock; several locks are supported side by side
+
+---
+
+## 💡 What You Can Do With It
+
+**Lock the door on a schedule or when leaving.** The lock, unlock and open
+actions map to the door's night mode, day mode and latch, so ordinary
+`lock.lock` automations work as expected.
+
+**React to the door opening.** The door contact is a separate binary sensor,
+independent of the lock state, and updates within a second in hybrid mode.
+
+**Notice a fault before it becomes a problem.** The error sensor reports a
+blocked motor or overcurrent, and the Clear Errors button resets the state
+without a power cycle.
+
+**Watch the connection.** The lock entity carries uptime and reconnect
+counters as attributes, which makes a flaky WiFi link visible instead of
+mysterious.
+
+---
+
+## ⚠️ Known Limitations
+
+**The connection drops occasionally.** The lock's WebSocket implementation
+does not follow the specification closely; a strict parser rejects the odd
+frame and closes the connection. Reconnect and HTTP fallback handle it, and
+sessions of more than 48 hours are normal, but the log will show the odd
+`WS session ended` entry.
+
+**A rejected command cannot be traced to its cause.** The lock does not echo
+request identifiers, so a rejection is attributed to the most recent request
+by timing. That is accurate while a single command is in flight, which is
+the normal case.
+
+**Counters reset when Home Assistant restarts.** `connection_count` and the
+uptime attributes describe the current Home Assistant session, not the
+lifetime of the lock. The lock's own operation counters do persist.
+
+**No battery reporting.** See Supported Devices above.
+
+**Entities keep their last state during an outage.** Rather than going
+unavailable, the lock shows the last known state and a repair issue appears
+after three failed updates. For a door lock a status from a few minutes ago
+is more useful than a greyed-out card - but it does mean the card is not
+proof the lock is reachable right now. The `websocket_connected` attribute
+and the repair issue are.
 
 ---
 
@@ -81,6 +151,22 @@ This integration communicates directly with your door controller over the local 
 4. Choose setup method:
    * **Search via Network:** Auto-scan for devices
    * **Manual Input:** Enter Serial Number and IP Address
+
+### Removing the Integration
+
+**Settings → Devices & Services → Winkhaus Door → ⋮ → Delete**
+
+That removes the config entry, its device and all entities, and closes the
+connection to the lock. Nothing is written to the door itself, so it keeps
+running with whatever mode it was last set to - a lock left in day mode stays
+in day mode.
+
+If you installed through HACS and want the files gone as well, uninstall the
+integration in HACS afterwards and restart Home Assistant.
+
+> Automations and dashboard cards referring to the removed entities are not
+> cleaned up automatically. Home Assistant will show them as unavailable
+> until you edit or delete them.
 
 ### Changing Connection Settings
 
@@ -148,7 +234,7 @@ installation. The examples below use the serial `SERIAL123`.
 | `sensor.winkhaus_door_serial123_lock_cnt` | Sensor | Total lock operations |
 | `sensor.winkhaus_door_serial123_unlock_cnt` | Sensor | Total unlock operations |
 | `sensor.winkhaus_door_serial123_error_cnt` | Sensor | Error counter |
-| `sensor.winkhaus_door_serial123_error_state` | Sensor | Current fault, with `all_errors` and `error_count` attributes (diagnostic) |
+| `sensor.winkhaus_door_serial123_error_state` | Sensor | Current fault as an enum, with `all_errors` and `error_count` attributes (diagnostic) |
 | `sensor.winkhaus_door_serial123_connection_mode` | Sensor | Hybrid or Polling (diagnostic) |
 
 **Display names** follow the name configured on the lock itself. A door named
@@ -172,6 +258,24 @@ The lock entity carries the current status plus connection statistics:
 
 Hours keep counting past 24, so a two-day session reads `48:30:23` rather than
 switching format.
+
+### Fault States
+
+The error sensor is a declared enum, so its values show up as choices in the
+automation editor rather than having to be typed:
+
+| State | Meaning |
+|-------|---------|
+| `none` | No fault |
+| `blocked` | Motor blocked |
+| `overcurrent` | Overcurrent |
+| `batterylow` | Low battery |
+| `unknown_fault` | A code this integration does not know yet |
+
+If a firmware reports something outside that list it becomes `unknown_fault`
+and is written to the log; the raw value stays visible in the `all_errors`
+attribute. If you ever see it, the log line has everything needed for an
+issue.
 
 ---
 
@@ -452,6 +556,24 @@ Contributions are welcome! Please:
 3. Commit changes (`git commit -m 'Add amazing feature'`)
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open Pull Request
+
+### Running the Tests
+
+```bash
+pip install -r requirements_test.txt
+pytest tests/ -q          # 321 tests, about three minutes
+mypy custom_components/   # strict mode, clean
+```
+
+The suite covers the protocol as well as the integration: the listener
+tests build genuine AES-CCM frames and the handshake tests perform a real
+X25519 exchange against a simulated lock, so a change to the IV
+construction or the counter handling fails there rather than on the wire.
+
+Some tests exist purely to hold a promise. `test_entity_identity.py` pins
+every unique ID, because changing one orphans the registry entry of every
+existing installation without any error appearing. If it turns red, that is
+the point.
 
 ---
 

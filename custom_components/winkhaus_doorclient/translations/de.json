@@ -60,7 +60,8 @@
             "already_configured": "Dieses Gerät ist bereits konfiguriert.",
             "no_devices_found": "Keine Winkhaus Geräte im Netzwerk gefunden.",
             "reauth_successful": "Passwort erfolgreich aktualisiert!",
-            "reconfigure_successful": "Verbindungsdaten erfolgreich aktualisiert!"
+            "reconfigure_successful": "Verbindungsdaten erfolgreich aktualisiert!",
+            "entry_not_found": "Der Konfigurationseintrag existiert nicht mehr."
         }
     },
     "options": {
@@ -92,7 +93,8 @@
                     "none": "Kein Fehler",
                     "overcurrent": "Überstrom",
                     "blocked": "Motor blockiert",
-                    "batterylow": "Batterie schwach"
+                    "batterylow": "Batterie schwach",
+                    "unknown_fault": "Unbekannter Fehler"
                 }
             },
             "lock_cnt": {
@@ -105,7 +107,11 @@
                 "name": "Fehleranzahl"
             },
             "connection_mode": {
-                "name": "Verbindungsmodus"
+                "name": "Verbindungsmodus",
+                "state": {
+                    "push": "Push",
+                    "polling": "Polling"
+                }
             }
         },
         "button": {
@@ -137,6 +143,23 @@
         "device_unreachable": {
             "title": "Winkhaus Tür nicht erreichbar",
             "description": "Das Schloss mit der Seriennummer {serial} hat bei {failures} Aktualisierungen in Folge nicht geantwortet.\n\n- Ist das Gerät eingeschaltet und mit dem Netzwerk verbunden?\n- Kannst du es von Home Assistant aus erreichen?\n- Falls sich die IP-Adresse geändert hat, öffne das Drei-Punkte-Menü der Integration und wähle **Neu konfigurieren**, um Home Assistant auf die neue Adresse zu verweisen.\n\nDiese Meldung verschwindet von selbst, sobald das Schloss wieder antwortet."
+        }
+    },
+    "exceptions": {
+        "command_failed": {
+            "message": "Das Schloss war nicht erreichbar, um den Befehl {command} auszuführen."
+        },
+        "mode_failed": {
+            "message": "Das Schloss war nicht erreichbar, um in den Modus {mode} zu wechseln."
+        },
+        "unblock_failed": {
+            "message": "Der Fehler konnte nicht zurückgesetzt werden: {error}"
+        },
+        "unblock_unreachable": {
+            "message": "Das Schloss war nicht erreichbar, um den Fehler zurückzusetzen."
+        },
+        "system_state_failed": {
+            "message": "Der Systemzustand konnte nicht gelesen werden: {error}"
         }
     }
 }

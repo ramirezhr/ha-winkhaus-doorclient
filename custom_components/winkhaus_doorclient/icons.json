@@ -1,0 +1,37 @@
+{
+    "entity": {
+        "button": {
+            "clear_errors": {
+                "default": "mdi:shield-refresh"
+            }
+        },
+        "select": {
+            "mode": {
+                "default": "mdi:weather-sunny",
+                "state": {
+                    "night": "mdi:weather-night"
+                }
+            }
+        },
+        "sensor": {
+            "lock_cnt": {
+                "default": "mdi:lock-check"
+            },
+            "unlock_cnt": {
+                "default": "mdi:lock-open-variant"
+            },
+            "error_cnt": {
+                "default": "mdi:alert-circle-outline"
+            },
+            "error_state": {
+                "default": "mdi:alert-circle-outline"
+            },
+            "connection_mode": {
+                "default": "mdi:lan-connect",
+                "state": {
+                    "polling": "mdi:cached"
+                }
+            }
+        }
+    }
+}

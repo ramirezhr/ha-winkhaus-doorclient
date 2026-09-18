@@ -1,48 +1,43 @@
 # in custom_components/winkhaus_doorclient/binary_sensor.py
 
 import logging
+from typing import Any
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, build_entity_id
-from .api import DoorClient
+from .coordinator import WinkhausConfigEntry, WinkhausCoordinator
+from .entity import WinkhausEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+# All entities read from the same coordinator and every command goes to the
+# same lock, so there is nothing to serialise.
+PARALLEL_UPDATES = 0
+
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: WinkhausConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    data = hass.data[DOMAIN][entry.entry_id]
-    client = data["client"]
-    coordinator = data["coordinator"]
-    device_info = data["device_info"]
+    coordinator = entry.runtime_data.coordinator
     
-    async_add_entities([WinkhausDoorSensor(coordinator, client, entry, device_info)])
+    async_add_entities([WinkhausDoorSensor(coordinator, entry)])
 
-class WinkhausDoorSensor(CoordinatorEntity, BinarySensorEntity):
-    _attr_has_entity_name = True
+class WinkhausDoorSensor(WinkhausEntity[WinkhausCoordinator], BinarySensorEntity):
+    _attr_device_class = BinarySensorDeviceClass.DOOR
 
-    def __init__(self, coordinator, client: DoorClient, entry: ConfigEntry, device_info: dict) -> None:
-        super().__init__(coordinator)
-        self._client = client
-        self._attr_unique_id = f"{entry.data['serial_number']}_door_state"
-        self.entity_id = build_entity_id("binary_sensor", entry.data['serial_number'], "door")
-        self._attr_translation_key = "door"
-        self._attr_device_class = BinarySensorDeviceClass.DOOR
-        
-        self._attr_device_info = device_info
+    def __init__(self, coordinator: WinkhausCoordinator, entry: WinkhausConfigEntry) -> None:
+        # Entity id says "door", the unique id has said "door_state" since
+        # 1.2.0 - keep them apart rather than orphan existing entries.
+        super().__init__(coordinator, entry, "binary_sensor", "door",
+                         unique_key="door_state")
 
     @property
     def is_on(self) -> bool | None:
         if not self.coordinator.data:
             return None
-        state_value = next((item['value'] for item in self.coordinator.data if item['name'] == 'state'), None)
-        return str(state_value).lower() == "open"
+        return str(self.state_value("state")).lower() == "open"
