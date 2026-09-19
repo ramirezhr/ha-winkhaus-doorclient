@@ -109,7 +109,7 @@
             "connection_mode": {
                 "name": "Verbindungsmodus",
                 "state": {
-                    "push": "Push",
+                    "hybrid": "Hybrid",
                     "polling": "Polling"
                 }
             }

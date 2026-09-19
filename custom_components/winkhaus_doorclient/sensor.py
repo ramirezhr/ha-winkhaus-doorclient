@@ -101,8 +101,10 @@ class WinkhausConnectionModeSensor(SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        mode = self._entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID)
-        return "Hybrid" if mode == MODE_HYBRID else "Polling"
+        # The option value is the state: "hybrid" or "polling". Both the icon
+        # and the display label are keyed on it, and translation keys have to
+        # be lower case, so no capitalisation happens here.
+        return self._entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID)
 
 class WinkhausErrorStateSensor(WinkhausEntity[WinkhausCoordinator], SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC

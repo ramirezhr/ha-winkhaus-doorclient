@@ -106,7 +106,7 @@
             "connection_mode": {
                 "name": "Connection Mode",
                 "state": {
-                    "push": "Push",
+                    "hybrid": "Hybrid",
                     "polling": "Polling"
                 }
             }
