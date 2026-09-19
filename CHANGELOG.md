@@ -1,6 +1,14 @@
 # Changelog
 
-## [2.6.0] - 2026-09-09
+## [2.6.1] - 2026-09-19
+
+### Fixed
+- **hassfest Validation:** The release workflow failed on three errors from the icon and translation checks. `exceptions.command_failed.message` wrapped its placeholder in single quotes, which ICU reserves for escaping; the German file carried the same quoting although the check did not flag it. The `connection_mode` icon key was capitalised, which the icon schema does not allow.
+
+### Changed
+- **Connection Mode Reports the Option Value:** The diagnostic sensor used to capitalise its state to `Hybrid` or `Polling`, which is why its icon key was capitalised too. Icon and state translations are both keyed on the state and have to be lower case, so the sensor now reports the option value unchanged - `hybrid` or `polling` - and the display label comes from the translations, as it already did for the fault sensor. **Breaking for templates and automations that compare this sensor's state as text.**
+
+## [2.6.0] - 2026-09-18
 
 ### Added
 - **Platinum Quality Scale:** `mypy --strict` is clean across all twelve modules, which completes the last rule. Two ignores remain and are documented: the websockets library exposes no stable public type for its connection object, and Home Assistant does not re-export `ZeroconfServiceInfo`. Every rule is now met or recorded as a deliberate exception.

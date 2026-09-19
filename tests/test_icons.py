@@ -118,12 +118,12 @@ async def test_mode_state_key_matches_the_option(hass: HomeAssistant) -> None:
 
 
 async def test_connection_mode_state_key_matches(hass: HomeAssistant) -> None:
-    """This sensor reports "Polling" capitalised, so the key must be too."""
+    """The sensor reports the raw option value, which is what the key must be."""
     await setup_with(hass, options={CONF_UPDATE_MODE: MODE_POLLING})
     icons = await icons_of(hass)
 
     zustand = hass.states.get(f"sensor.{PREFIX}_connection_mode").state
-    assert zustand == "Polling"
+    assert zustand == "polling"
     assert icons["sensor"]["connection_mode"]["state"][zustand] == "mdi:cached"
 
 

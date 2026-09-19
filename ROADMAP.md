@@ -2,7 +2,7 @@
 
 Where this integration is heading, and what it deliberately will not do.
 
-Current release: **2.6.0**
+Current release: **2.6.1**
 
 ---
 
