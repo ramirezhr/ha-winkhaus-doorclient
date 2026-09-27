@@ -214,12 +214,13 @@ class TestStop:
         assert connected._monitor_running is False
 
     async def test_cancels_the_watchdog(self, connected):
-        task = MagicMock()
+        task = asyncio.create_task(asyncio.sleep(3600))
         connected._watchdog_task = task
 
         await connected.stop()
 
-        task.cancel.assert_called_once()
+        assert task.cancelled()
+        assert connected._watchdog_task is None
 
     async def test_survives_a_websocket_that_will_not_close(self, connected):
         connected._active_ws.close.side_effect = OSError("already gone")

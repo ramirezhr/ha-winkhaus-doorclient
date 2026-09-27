@@ -20,6 +20,7 @@ from .coordinator import (
     async_create_client,
 )
 from .const import CONF_UPDATE_MODE, MODE_HYBRID
+from .api import WS_START_DELAY
 
 PLATFORMS = ["lock", "select", "binary_sensor", "sensor", "button"]
 
@@ -121,13 +122,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WinkhausConfigEntry) -> 
 
     if entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID) == MODE_HYBRID:
 
-        async def start_ws_delayed() -> None:
-            await asyncio.sleep(2)
-            _LOGGER.debug(f"[WS PUSH {serial}] Starting WebSocket monitoring...")
-            await client.connect_and_monitor()
-
+        # The delay lives inside the client, so a stop() arriving during it
+        # is seen. A wrapper coroutine sleeping here would not be.
+        _LOGGER.debug(f"[WS PUSH {serial}] Scheduling WebSocket monitoring...")
         entry.async_create_background_task(
-            hass, start_ws_delayed(), name=f"winkhaus_ws_{serial}"
+            hass,
+            client.connect_and_monitor(start_delay=WS_START_DELAY),
+            name=f"winkhaus_ws_{serial}",
         )
 
     device_info, lock_name = _build_device_info(serial, system_coordinator.data or {})

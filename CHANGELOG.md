@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.6.2] - 2026-09-26
+
+### Fixed
+- **Stop Was Forgotten During the Start Delay:** The WebSocket monitor waits two seconds after setup before it connects. An entry unloaded inside that window called `stop()` against a monitor that had not begun yet, and the loop then set the running flag itself on the way in - so it connected anyway, on behalf of an entry that no longer existed. Visible as a connection attempt logged during teardown, and reachable in normal use by changing an option, which unloads and sets up in quick succession. The stop is now recorded separately and checked once the delay is over, and the delay itself has moved into the client so it is part of the cancellable task.
+- **Cleanup Was Requested Rather Than Awaited:** `stop()` cancelled the watchdog without waiting for it, so it could still be unwinding after `stop()` had returned, and the reconnect loop was never held anywhere that could cancel it at all. The client now keeps both tasks, cancels them and waits for each. The watchdog loop also ends on the stop flag by itself, instead of relying solely on being cancelled.
+- **Quality Scale Badge Missing in Home Assistant:** The badge URL contained a percent escape (`quality%20scale`), which the markdown renderer in Home Assistant encodes a second time, so the image request never reached a valid address. It rendered on GitHub and nowhere else. The label now uses an underscore, which needs no escape. Its link was relative and has been made absolute, since the rendered README in HACS has no repository context to resolve it against.
+
+### Changed
+- **Stop Test Pins the Outcome, Not the Call:** The existing test asserted that `cancel()` had been called on a mock. Since cancelling only *requests* the end of a task, that passed while the bug above was present. It now uses a real task and checks that it is finished once `stop()` returns.
+
 ## [2.6.1] - 2026-09-19
 
 ### Fixed

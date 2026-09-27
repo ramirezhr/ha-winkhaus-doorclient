@@ -10,6 +10,7 @@ import struct
 import os
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
 # Cryptography
@@ -40,6 +41,9 @@ COMMAND_MAP = {
 }
 
 VALID_MODES = ("day", "night")
+
+# The lock needs a moment after setup before it accepts a WebSocket.
+WS_START_DELAY = 2.0
 
 def create_legacy_ssl_context() -> ssl.SSLContext:
     """Build an SSL context the door controller will accept.
@@ -100,7 +104,11 @@ class DoorClient:
         # Callbacks & Tasks
         self.on_state_change: Callable[[list[dict[str, Any]]], None] | None = None
         self._watchdog_task: asyncio.Task[None] | None = None
+        self._monitor_task: asyncio.Task[Any] | None = None
         self._monitor_running = False
+        # Set by stop() and never cleared. An entry on its way out must not
+        # be able to start a monitor that had not begun yet.
+        self._stop_requested = False
         
         # --- SIMPLE CONNECTION TRACKING ---
         self.connection_count = 0  # Total number of connections made
@@ -329,7 +337,7 @@ class DoorClient:
     # --- WEBSOCKET LISTENER & WATCHDOG ---
     async def _watchdog_loop(self) -> None:
         _LOGGER.info("Watchdog started (75s trigger interval).")
-        while True:
+        while not self._stop_requested:
             await asyncio.sleep(5)
             time_since_last = time.time() - self.last_message_time
             
@@ -473,29 +481,79 @@ class DoorClient:
             # value here would reject every message of the next session.
             self._device_counter = None
             
+            # Not awaited here: this runs inside the monitor task and the
+            # watchdog is rebuilt on the next handshake anyway. The observed
+            # teardown that has to finish belongs to stop().
             if self._watchdog_task:
                 self._watchdog_task.cancel()
 
+    async def _cancel_watchdog(self) -> None:
+        """Stop the watchdog and wait for it, so the task is really gone."""
+        task = self._watchdog_task
+        self._watchdog_task = None
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def _cancel_monitor(self) -> None:
+        """Stop the reconnect loop and wait for it to unwind."""
+        task = self._monitor_task
+        self._monitor_task = None
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
     async def stop(self) -> None:
+        # Set before anything is cancelled: a monitor still inside its start
+        # delay reads this and returns without ever opening a socket.
+        self._stop_requested = True
         self._monitor_running = False
-        if self._watchdog_task:
-            self._watchdog_task.cancel()
-            
-        if self.ws_connected and self._active_ws:
+
+        await self._cancel_watchdog()
+        await self._cancel_monitor()
+
+        if self._active_ws:
             try:
                 await self._active_ws.close()
             except Exception:
                 pass
-            self.ws_connected = False
-            self._active_ws = None
-            # --- Track disconnect ---
-            self.current_session_start = None
-            
+        self.ws_connected = False
+        self._active_ws = None
+        # --- Track disconnect ---
+        self.current_session_start = None
+
         # The session belongs to Home Assistant, so it is not closed here.
-            
+
         _LOGGER.debug("DoorClient background tasks stopped successfully.")
         
-    async def connect_and_monitor(self) -> None:
+    async def connect_and_monitor(self, start_delay: float = 0.0) -> None:
+        # Home Assistant schedules this as a background task, so the task
+        # object only exists from here on. Keeping it is what gives stop()
+        # something to cancel.
+        self._monitor_task = asyncio.current_task()
+        try:
+            await self._monitor_loop(start_delay)
+        finally:
+            self._monitor_running = False
+            self._monitor_task = None
+
+    async def _monitor_loop(self, start_delay: float) -> None:
+        if start_delay:
+            await asyncio.sleep(start_delay)
+
+        # An unload during the start delay has already set this. Without the
+        # check the loop below would set _monitor_running back to True and
+        # connect on behalf of an entry that is already gone.
+        if self._stop_requested:
+            _LOGGER.debug(
+                f"[{self.serial_number}] Monitor not started: stop was requested."
+            )
+            return
+
         self._monitor_running = True
         while self._monitor_running:
             ssl_ctx = ssl.create_default_context() if self.ws_uri.startswith("wss") else None

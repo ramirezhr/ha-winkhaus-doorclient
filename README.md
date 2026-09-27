@@ -3,7 +3,7 @@
 [![GitHub Release](https://img.shields.io/github/release/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
 [![License](https://img.shields.io/github/license/ramirezhr/ha-winkhaus-doorclient?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/blob/main/LICENSE)
 [![HACS](https://img.shields.io/badge/HACS-Default-orange?style=for-the-badge)](https://github.com/hacs/integration)
-[![Quality Scale](https://img.shields.io/badge/quality%20scale-platinum-e5e4e2?style=for-the-badge)](custom_components/winkhaus_doorclient/quality_scale.yaml)
+[![Quality Scale](https://img.shields.io/badge/quality_scale-platinum-e5e4e2?style=for-the-badge)](https://github.com/ramirezhr/ha-winkhaus-doorclient/blob/main/custom_components/winkhaus_doorclient/quality_scale.yaml)
 [![Maintainer](https://img.shields.io/badge/maintainer-ramirezhr-blue?style=for-the-badge)](https://github.com/ramirezhr)
 
 Custom integration to control and monitor **Winkhaus Door Systems** (blueMotion+ and EAV4+) via local API.
