@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Nightly Validation Failed on the Manifest:** hassfest now rejects `cryptography` in a custom integration's requirements, because Home Assistant ships it as a core dependency - listing it again lets an integration pull a different version into a shared environment. It has been removed; `websockets` stays, since core does not provide it. Nothing changes at runtime, the library was never actually installed on our behalf.
+
+### Changed
+- **Checkout Action Updated:** `actions/checkout@v4` runs on Node 20, which GitHub has deprecated and now force-runs on Node 24. Bumped to v5.
+
 ## [2.6.2] - 2026-09-26
 
 ### Fixed
