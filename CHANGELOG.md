@@ -1,12 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [2.6.3] - 2026-11-01
 
 ### Fixed
 - **Nightly Validation Failed on the Manifest:** hassfest now rejects `cryptography` in a custom integration's requirements, because Home Assistant ships it as a core dependency - listing it again lets an integration pull a different version into a shared environment. It has been removed; `websockets` stays, since core does not provide it. Nothing changes at runtime, the library was never actually installed on our behalf.
+- **Minimum Home Assistant Version Was Wrong:** `hacs.json` claimed 2024.1.0, while the integration has required 2024.6.0 since it moved to `ConfigEntry.runtime_data`. The value used to be decorative. From Home Assistant 2026.11 the Marketplace reads it before installing and offers an older release instead when a user's Home Assistant is too old - with a floor that low, such a user would have been handed a version that cannot load.
 
 ### Changed
 - **Checkout Action Updated:** `actions/checkout@v4` runs on Node 20, which GitHub has deprecated and now force-runs on Node 24. Bumped to v5.
+- **Default Branch No Longer Offered for Download:** `hide_default_branch` is set. Every supported version is a release; installing the tip of `main` only ever produced untested states.
+- **`render_readme` Dropped from hacs.json:** It is not among the keys the Marketplace reads, and unknown keys are ignored.
+- **Installation Instructions Cover the Marketplace:** From Home Assistant 2026.11 the integration is installed under **Settings** > **Marketplace**, which ships built in. The HACS route is kept for older installations.
 
 ## [2.6.2] - 2026-09-26
 

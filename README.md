@@ -110,7 +110,17 @@ and the repair issue are.
 
 ## 🚀 Installation
 
-### Option 1: HACS (Recommended)
+### Option 1: Marketplace (Home Assistant 2026.11 and newer)
+
+1. Go to **Settings** > **Marketplace**
+2. Search for **"Winkhaus Doorclient"**
+3. Click the integration, then **Download**
+4. Restart Home Assistant if you are asked to
+
+The Marketplace is built into Home Assistant from 2026.11 on; HACS does not need to be
+installed separately, and an existing HACS installation is migrated on first start.
+
+### Option 2: HACS (Home Assistant 2026.10 and older)
 
 1. Open **HACS** in Home Assistant
 2. Go to **Integrations**
@@ -125,7 +135,7 @@ and the repair issue are.
 > 2. Add URL: `https://github.com/ramirezhr/ha-winkhaus-doorclient`
 > 3. Category: **Integration**
 
-### Option 2: Manual Installation
+### Option 3: Manual Installation
 
 1. Download `custom_components/winkhaus_doorclient` from the [latest release](https://github.com/ramirezhr/ha-winkhaus-doorclient/releases)
 2. Copy the folder to `config/custom_components/` directory
