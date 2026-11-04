@@ -10,6 +10,34 @@ CONF_UPDATE_MODE = "update_mode"
 MODE_HYBRID = "hybrid"
 MODE_POLLING = "polling"
 
+# The serial number is not just a label: it goes into the PBKDF2 salt
+# together with the user name, so it has to match the lock character for
+# character. The model prefix is part of it, and that is the part people
+# leave off when they copy the number from the sticker.
+CONF_MODEL = "model"
+MODEL_BLUEMOTION = "bluemotion_plus"
+MODEL_EAV4 = "eav4_plus"
+MODEL_PREFIXES = {
+    MODEL_BLUEMOTION: "WH_02",
+    MODEL_EAV4: "WH_01",
+}
+SERIAL_PREFIX = "WH_"
+
+
+def normalise_serial(value: str, model: str | None = None) -> str:
+    """Turn what someone typed into what the lock expects.
+
+    Whitespace goes, because it survives copy and paste. A missing model
+    prefix is filled in from the selected model, and a lower case one is
+    corrected - it is a known literal. The rest is left exactly as entered:
+    it is device data, and guessing at its case would trade one silent
+    mismatch for another.
+    """
+    cleaned = "".join(value.split())
+    if cleaned[: len(SERIAL_PREFIX)].upper() == SERIAL_PREFIX:
+        return SERIAL_PREFIX + cleaned[len(SERIAL_PREFIX) :]
+    return MODEL_PREFIXES.get(model or "", "") + cleaned
+
 
 def build_entity_id(platform: str, serial: str, suffix: str) -> str:
     """Build a deterministic entity_id from the serial number.

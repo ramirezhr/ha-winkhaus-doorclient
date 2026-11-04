@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.7.0] - 2026-11-04
+
+### Added
+- **The Manual Form Asks for the Model, Not for a Prefix:** The serial number goes into the PBKDF2 salt, so it has to match the lock character for character - including the `WH_01` or `WH_02` prefix that people reasonably leave off when copying the number from the sticker. The form now has a model dropdown and completes the prefix itself. A number pasted in full is taken as typed, so a future prefix is not blocked by the list, and surrounding whitespace is dropped.
+- **A Wrong Serial Number Is Caught Before the Entry Exists:** HTTP authenticates with basic auth and never sees the serial number, so setup used to succeed with a wrong one. The entry was created, entities appeared, polling worked - and the WebSocket failed authentication every thirty seconds while telling the user to check a password that was correct. The manual flow now runs the handshake before creating the entry. A refusal means the serial number is wrong, since the password has just been accepted over HTTP, and it stops the setup with its own message. An unreachable WebSocket is not treated as evidence: those installations still set up and run in polling mode. Discovery is unaffected, the serial number comes off the lock there.
+- **The Setup Dialog Says What Has to Be Switched On:** The lock refuses every API call until external API access is enabled in the doorControl app, and it refuses them with HTTP 200 and `api unavailable` regardless of the credentials - so a correct password is indistinguishable from a wrong one, and three issues so far have started there. The authentication and manual steps now carry the path through the app, and the connection error points at it instead of only reporting failure. The README gained a prerequisites section.
+
+### Fixed
+- **The WebSocket Auth Error Blamed the Password Alone:** The serial number is part of the key, so it is just as likely a cause. The message now says so.
+- **Door Sensor Claimed a Closed Door It Knew Nothing About:** The sensor compared the reported position against `open` and treated everything else as closed. An EAV4+ answers `nocontact` when no magnet clip is fitted or the parameter for it is switched off, so the dashboard showed a shut door for an installation that cannot tell - the one reading a door sensor must never invent. Only `open` and `closed` are now accepted; anything else leaves the sensor `unknown`. Reported in #7, with the model and the field value, by someone who has the hardware we do not.
+
 ## [2.6.3] - 2026-11-01
 
 ### Fixed

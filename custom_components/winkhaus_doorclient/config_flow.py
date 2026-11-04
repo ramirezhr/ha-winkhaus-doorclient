@@ -31,8 +31,36 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     CONF_UPDATE_MODE,
     MODE_HYBRID,
-    MODE_POLLING
+    MODE_POLLING,
+    CONF_MODEL,
+    MODEL_BLUEMOTION,
+    MODEL_EAV4,
+    normalise_serial,
 )
+
+# Only the manual form needs these: discovery reads the serial number off the
+# lock itself, where it cannot be mistyped.
+MODEL_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[
+            SelectOptionDict(value=MODEL_BLUEMOTION, label="blueMotion+"),
+            SelectOptionDict(value=MODEL_EAV4, label="EAV4+"),
+        ],
+        mode=SelectSelectorMode.DROPDOWN,
+    )
+)
+
+
+def manual_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    """The manual form, with whatever the user last typed filled back in."""
+    d = defaults or {}
+    return vol.Schema({
+        vol.Required(CONF_MODEL, default=d.get(CONF_MODEL, MODEL_BLUEMOTION)): MODEL_SELECTOR,
+        vol.Required("serial_number", default=d.get("serial_number", "")): cv.string,
+        vol.Required(CONF_IP_ADDRESS, default=d.get(CONF_IP_ADDRESS, "")): cv.string,
+        vol.Required(CONF_USERNAME, default=d.get(CONF_USERNAME, "admin")): cv.string,
+        vol.Required(CONF_PASSWORD, default=d.get(CONF_PASSWORD, "")): cv.string,
+    })
 from .coordinator import async_create_client
 
 _LOGGER = logging.getLogger(__name__)
@@ -184,16 +212,11 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
-            return await self._validate_and_create(user_input)
+            return await self._validate_and_create(user_input, verify_serial=True)
 
         return self.async_show_form(
             step_id="manual",
-            data_schema=vol.Schema({
-                vol.Required("serial_number"): cv.string,
-                vol.Required(CONF_IP_ADDRESS): cv.string,
-                vol.Required(CONF_USERNAME, default="admin"): cv.string,
-                vol.Required(CONF_PASSWORD): cv.string,
-            }),
+            data_schema=manual_schema(),
             last_step=False
         )
 
@@ -364,8 +387,19 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors
         )
 
-    async def _validate_and_create(self, data: dict[str, Any]) -> ConfigFlowResult:
+    async def _validate_and_create(
+        self, data: dict[str, Any], *, verify_serial: bool = False
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+
+        # The model only exists to complete the serial number. Once that is
+        # done it is derivable from the prefix again, so it does not belong
+        # in the stored entry.
+        data = dict(data)
+        model = data.pop(CONF_MODEL, None)
+        if verify_serial:
+            data["serial_number"] = normalise_serial(data["serial_number"], model)
+
         await self.async_set_unique_id(data["serial_number"])
         self._abort_if_unique_id_configured()
 
@@ -380,6 +414,13 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not await client.connect():
                 errors["base"] = "cannot_connect"
+            elif verify_serial and await client.verify_credentials() is False:
+                # HTTP has just accepted the password over basic auth, which
+                # does not involve the serial number. The handshake does, and
+                # it refused - so the serial number is what is wrong. Without
+                # this check the entry would be created and only the
+                # WebSocket would keep failing, out of sight.
+                errors["base"] = "invalid_serial"
             else:
                 return self.async_create_entry(
                     title=f"Winkhaus Door ({data['serial_number']})",
@@ -396,12 +437,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
         return self.async_show_form(
             step_id="manual",
-            data_schema=vol.Schema({
-                vol.Required("serial_number", default=data["serial_number"]): cv.string,
-                vol.Required(CONF_IP_ADDRESS, default=data[CONF_IP_ADDRESS]): cv.string,
-                vol.Required(CONF_USERNAME, default=data[CONF_USERNAME]): cv.string,
-                vol.Required(CONF_PASSWORD, default=data[CONF_PASSWORD]): cv.string,
-            }),
+            data_schema=manual_schema({**data, CONF_MODEL: model or MODEL_BLUEMOTION}),
             errors=errors
         )
 

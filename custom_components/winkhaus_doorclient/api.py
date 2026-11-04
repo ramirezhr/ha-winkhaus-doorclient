@@ -507,6 +507,80 @@ class DoorClient:
         with suppress(asyncio.CancelledError):
             await task
 
+    async def _perform_handshake(self, ws: Any) -> bool:
+        """Run the X25519 exchange and the challenge response on an open socket.
+
+        True when the lock accepted the key material. False when it answered
+        and the response did not verify, which means the password or the
+        serial number is wrong - the serial is part of the PBKDF2 salt, so at
+        this level a typo in it is indistinguishable from a bad password.
+        """
+        msg = await ws.recv()
+        if isinstance(msg, str):
+            _LOGGER.error("WS greeting arrived as text, expected binary.")
+            raise ValueError("unexpected text frame during handshake")
+
+        # A 66 byte greeting carries a two byte header
+        srv: bytes = msg[2:] if len(msg) == 66 else msg
+        self.device_challenge = srv[32:]
+        priv = x25519.X25519PrivateKey.generate()
+        pub = priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        self.shared_key = priv.exchange(x25519.X25519PublicKey.from_public_bytes(srv[:32]))
+        
+        pwd_key = self._get_pbdf2_key()
+        self.client_challenge = os.urandom(32)
+        hmac_val = self._create_hmac_sha1(pwd_key, self.device_challenge + self.client_challenge)
+        user = self.username.encode('utf-8').ljust(32, b'\x00')
+        enc = AESCCM(self.shared_key, tag_length=16).encrypt(self.device_challenge[:13], self.client_challenge + user + hmac_val, None)
+        
+        await ws.send(b'\x81\x00' + struct.pack('>H', len(pub)+len(enc)) + pub + enc)
+        resp = await ws.recv()
+        if isinstance(resp, str):
+            _LOGGER.error("WS auth reply arrived as text, expected binary.")
+            raise ValueError("unexpected text frame during handshake")
+
+        check = resp[4:] if len(resp) == 24 else resp
+        return bool(check == self._create_hmac_sha1(pwd_key, self.client_challenge))
+
+    def _ws_ssl_context(self) -> ssl.SSLContext | None:
+        if not self.ws_uri.startswith("wss"):
+            return None
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+    async def verify_credentials(self, timeout: float = 10.0) -> bool | None:
+        """Whether the lock accepts our key material. For the config flow.
+
+        True when the handshake succeeded. False when the lock answered and
+        rejected us. None when the WebSocket could not be reached or spoke
+        unexpectedly - that says nothing about the credentials, and an
+        installation whose WebSocket is blocked has to stay setup-able in
+        polling mode.
+        """
+        try:
+            async with asyncio.timeout(timeout):
+                async with websockets.connect(
+                    self.ws_uri,
+                    ssl=self._ws_ssl_context(),
+                    ping_interval=None,
+                    close_timeout=5,
+                ) as ws:
+                    try:
+                        return await self._perform_handshake(ws)
+                    except Exception as err:
+                        _LOGGER.debug(
+                            f"[{self.serial_number}] Handshake check inconclusive: {err}"
+                        )
+                        return None
+        except Exception as err:
+            _LOGGER.debug(
+                f"[{self.serial_number}] WebSocket not reachable for the "
+                f"handshake check: {err}"
+            )
+            return None
+
     async def stop(self) -> None:
         # Set before anything is cancelled: a monitor still inside its start
         # delay reads this and returns without ever opening a socket.
@@ -556,40 +630,12 @@ class DoorClient:
 
         self._monitor_running = True
         while self._monitor_running:
-            ssl_ctx = ssl.create_default_context() if self.ws_uri.startswith("wss") else None
-            if ssl_ctx: ssl_ctx.check_hostname = False; ssl_ctx.verify_mode = ssl.CERT_NONE
+            ssl_ctx = self._ws_ssl_context()
 
             try:
                 _LOGGER.info(f"Connecting WS to {self.ws_uri}...")
                 async with websockets.connect(self.ws_uri, ssl=ssl_ctx, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
-                    # Handshake 
-                    msg = await ws.recv()
-                    if isinstance(msg, str):
-                        _LOGGER.error("WS greeting arrived as text, expected binary.")
-                        raise ValueError("unexpected text frame during handshake")
-
-                    # A 66 byte greeting carries a two byte header
-                    srv: bytes = msg[2:] if len(msg) == 66 else msg
-                    self.device_challenge = srv[32:]
-                    priv = x25519.X25519PrivateKey.generate()
-                    pub = priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-                    self.shared_key = priv.exchange(x25519.X25519PublicKey.from_public_bytes(srv[:32]))
-                    
-                    pwd_key = self._get_pbdf2_key()
-                    self.client_challenge = os.urandom(32)
-                    hmac_val = self._create_hmac_sha1(pwd_key, self.device_challenge + self.client_challenge)
-                    user = self.username.encode('utf-8').ljust(32, b'\x00')
-                    enc = AESCCM(self.shared_key, tag_length=16).encrypt(self.device_challenge[:13], self.client_challenge + user + hmac_val, None)
-                    
-                    await ws.send(b'\x81\x00' + struct.pack('>H', len(pub)+len(enc)) + pub + enc)
-                    resp = await ws.recv()
-                    if isinstance(resp, str):
-                        _LOGGER.error("WS auth reply arrived as text, expected binary.")
-                        raise ValueError("unexpected text frame during handshake")
-
-                    check = resp[4:] if len(resp) == 24 else resp
-                    
-                    if check == self._create_hmac_sha1(pwd_key, self.client_challenge):
+                    if await self._perform_handshake(ws):
                         _LOGGER.info("WS Auth OK. Connection established.")
                         self.ws_connected = True
                         self._active_ws = ws
@@ -626,8 +672,9 @@ class DoorClient:
                         # reconnect immediately -> endless loop that floods the
                         # lock with handshakes and spams the Home Assistant log.
                         _LOGGER.error(
-                            f"[{self.serial_number}] WS Auth Failed. "
-                            f"Check the password. Next attempt in 30s..."
+                            f"[{self.serial_number}] WS Auth Failed. The serial "
+                            f"number is part of the key, so check it as well as "
+                            f"the password. Next attempt in 30s..."
                         )
                         self.ws_connected = False
                         self._active_ws = None

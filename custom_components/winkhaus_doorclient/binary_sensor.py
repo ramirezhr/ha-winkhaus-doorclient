@@ -14,6 +14,16 @@ from .entity import WinkhausEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+# The door contact is optional on an EAV4+: the lock reports "open" or
+# "closed" when a magnet clip is fitted and declared in the doorControl app,
+# and "nocontact" otherwise. A blueMotion+ has no such option and always
+# reports the position. So the value describes the installation, and fitting
+# the clip starts the reporting without anything changing here. Anything
+# outside the two known values means the position is not being reported, and
+# a door sensor has to say so rather than pick the safe-sounding half of a
+# guess.
+DOOR_STATES = {"open": True, "closed": False}
+
 # All entities read from the same coordinator and every command goes to the
 # same lock, so there is nothing to serialise.
 PARALLEL_UPDATES = 0
@@ -38,6 +48,14 @@ class WinkhausDoorSensor(WinkhausEntity[WinkhausCoordinator], BinarySensorEntity
 
     @property
     def is_on(self) -> bool | None:
-        if not self.coordinator.data:
+        raw = self.state_value("state")
+        if raw is None:
             return None
-        return str(self.state_value("state")).lower() == "open"
+
+        value = str(raw).lower()
+        if value not in DOOR_STATES:
+            _LOGGER.debug(
+                "Door state %r is neither open nor closed, reporting unknown.", raw
+            )
+            return None
+        return DOOR_STATES[value]

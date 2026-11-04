@@ -24,6 +24,7 @@ from custom_components.winkhaus_doorclient.const import (
 
 SERIAL = "WH_01TEST123456"
 CONNECT = "custom_components.winkhaus_doorclient.api.DoorClient.connect"
+VERIFY = "custom_components.winkhaus_doorclient.api.DoorClient.verify_credentials"
 
 
 def http_error(status: int) -> aiohttp.ClientResponseError:
@@ -54,6 +55,16 @@ def skip_integration_setup():
         "custom_components.winkhaus_doorclient.async_setup_entry", return_value=True
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def accept_handshake():
+    """The lock accepts the serial number unless a test says otherwise.
+
+    Without this the manual flow would open a real WebSocket to verify it.
+    """
+    with patch(VERIFY, new_callable=AsyncMock, return_value=True) as verify:
+        yield verify
 
 
 @pytest.fixture
@@ -130,6 +141,107 @@ async def test_duplicate_serial_is_rejected(
 
     assert result["type"] is data_entry_flow.FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+# ------------------------------------------------- serial number and model
+
+async def test_the_model_supplies_a_missing_prefix(hass: HomeAssistant) -> None:
+    """Nobody reads WH_02 off the sticker, so the dropdown provides it."""
+    flow_id = await start_manual(hass)
+
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, entry_data(serial_number="TEST123456", model="eav4_plus")
+        )
+
+    assert result["type"] is data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert result["data"]["serial_number"] == "WH_01TEST123456"
+
+
+async def test_a_full_serial_number_is_taken_as_typed(hass: HomeAssistant) -> None:
+    """A pasted number wins, so a future prefix is not blocked by the list."""
+    flow_id = await start_manual(hass)
+
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, entry_data(serial_number="WH_09FUTURE0001", model="bluemotion_plus")
+        )
+
+    assert result["data"]["serial_number"] == "WH_09FUTURE0001"
+
+
+async def test_the_model_is_not_stored(hass: HomeAssistant) -> None:
+    """It only completes the serial; afterwards the prefix carries it."""
+    flow_id = await start_manual(hass)
+
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, entry_data(model="eav4_plus")
+        )
+
+    assert "model" not in result["data"]
+
+
+async def test_a_rejected_serial_stops_the_setup(
+    hass: HomeAssistant, accept_handshake
+) -> None:
+    """The old behaviour created the entry and failed silently afterwards.
+
+    HTTP uses basic auth and never sees the serial number, so a wrong one
+    passed setup and then broke only the WebSocket - every 30 seconds, in
+    the log, telling the user to check a password that was correct.
+    """
+    accept_handshake.return_value = False
+    flow_id = await start_manual(hass)
+
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        result = await hass.config_entries.flow.async_configure(flow_id, entry_data())
+
+    assert result["type"] is data_entry_flow.FlowResultType.FORM
+    assert result["errors"]["base"] == "invalid_serial"
+
+
+async def test_an_unreachable_websocket_does_not_block_setup(
+    hass: HomeAssistant, accept_handshake
+) -> None:
+    """Only a refusal is evidence. Silence means polling mode, not a typo."""
+    accept_handshake.return_value = None
+    flow_id = await start_manual(hass)
+
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        result = await hass.config_entries.flow.async_configure(flow_id, entry_data())
+
+    assert result["type"] is data_entry_flow.FlowResultType.CREATE_ENTRY
+
+
+async def test_discovery_does_not_re_check_the_serial(
+    hass: HomeAssistant, accept_handshake
+) -> None:
+    """It came off the lock, so there is nothing a handshake could add."""
+    accept_handshake.return_value = False
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=ZeroconfServiceInfo(
+            ip_address=ip_address("192.168.1.50"),
+            ip_addresses=[ip_address("192.168.1.50")],
+            port=443,
+            hostname="winkhaus.local.",
+            type="_whdc-device._tcp.local.",
+            name=f"{SERIAL}._whdc-device._tcp.local.",
+            properties={"serial_number": SERIAL},
+        ),
+    )
+    assert result["step_id"] == "auth"
+
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_USERNAME: "admin", CONF_PASSWORD: "secret"}
+        )
+
+    assert result["type"] is data_entry_flow.FlowResultType.CREATE_ENTRY
+    accept_handshake.assert_not_awaited()
 
 
 # ------------------------------------------------------------------- zeroconf

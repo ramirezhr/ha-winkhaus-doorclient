@@ -82,6 +82,16 @@ mysterious.
 
 ## ⚠️ Known Limitations
 
+**On an EAV4+, door position needs the magnet clip.** There the door contact
+is optional: the lock reports `open` or `closed` only when a clip is fitted
+**and** declared in the doorControl app, under Parameter as **Magnetklipp
+vorhanden**. Otherwise the answer is `nocontact`, and the door sensor stays
+`unknown` rather than claiming the door is shut. That is an installation
+setting, not a model limitation - switch the parameter on, or fit the clip,
+and the sensor starts reporting on its own. A blueMotion+ has no such option
+and always reports the position. Lock state and day/night mode are
+unaffected on both.
+
 **The connection drops occasionally.** The lock's WebSocket implementation
 does not follow the specification closely; a strict parser rejects the odd
 frame and closes the connection. Reconnect and HTTP fallback handle it, and
@@ -105,6 +115,23 @@ after three failed updates. For a door lock a status from a few minutes ago
 is more useful than a greyed-out card - but it does mean the card is not
 proof the lock is reachable right now. The `websocket_connected` attribute
 and the repair issue are.
+
+---
+
+## 🔑 Prerequisites
+
+**Enable external API access on the lock.** Out of the box the lock answers
+every API call with `api unavailable` and HTTP 200, no matter which account
+or password is used - so a correct password looks like a wrong one. In the
+doorControl app:
+
+1. Open the door on the start screen and tap the **gear icon**
+2. **System** > **Parameter**
+3. Switch on **Externe API aktivieren** ("Enable external API")
+4. Tap **Übernehmen** to save
+
+This needs an account with the **Administrator** role. The lock also has to be
+on the same network as Home Assistant.
 
 ---
 

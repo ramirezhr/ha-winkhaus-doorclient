@@ -15,7 +15,12 @@ from custom_components.winkhaus_doorclient.api import (
     WINKHAUS_STATUS_MAP,
     DoorClient,
 )
-from custom_components.winkhaus_doorclient.const import build_entity_id
+from custom_components.winkhaus_doorclient.const import (
+    MODEL_BLUEMOTION,
+    MODEL_EAV4,
+    build_entity_id,
+    normalise_serial,
+)
 from custom_components.winkhaus_doorclient.lock import WinkhausLock
 
 SERIAL = "WH_021C6920F1B188"
@@ -189,3 +194,45 @@ class TestSessionTracking:
 
         client.current_session_start = time.time() - 100
         assert 99 <= client.get_current_uptime() <= 101
+
+
+# --------------------------------------------------------- serial numbers
+
+class TestSerialNormalisation:
+    """What someone types versus what goes into the PBKDF2 salt.
+
+    The serial number is key material, so a difference of one character is
+    a failed handshake rather than a helpful error. The two mistakes worth
+    absorbing are a missing model prefix and stray whitespace.
+    """
+
+    @pytest.mark.parametrize(
+        ("model", "expected"),
+        [
+            (MODEL_BLUEMOTION, "WH_021C6920F1B188"),
+            (MODEL_EAV4, "WH_011C6920F1B188"),
+        ],
+    )
+    def test_the_model_supplies_the_prefix(self, model, expected):
+        assert normalise_serial("1C6920F1B188", model) == expected
+
+    def test_a_prefix_already_there_is_kept(self):
+        assert normalise_serial("WH_021C6920F1B188", MODEL_EAV4) == "WH_021C6920F1B188"
+
+    def test_an_unknown_prefix_is_not_second_guessed(self):
+        """A future model has to work without a release of this integration."""
+        assert normalise_serial("WH_09FUTURE0001", MODEL_BLUEMOTION) == "WH_09FUTURE0001"
+
+    def test_the_prefix_is_case_corrected(self):
+        """WH_ is a literal we know. The rest is device data and stays put."""
+        assert normalise_serial("wh_021c6920f1b188") == "WH_021c6920f1b188"
+
+    @pytest.mark.parametrize(
+        "typed", [" WH_021C6920F1B188", "WH_021C6920F1B188 ", "WH_02 1C6920F1B188"]
+    )
+    def test_whitespace_survives_copy_and_paste_but_not_this(self, typed):
+        assert normalise_serial(typed) == "WH_021C6920F1B188"
+
+    def test_without_a_model_nothing_is_invented(self):
+        """The flow validates against the lock; guessing would hide the error."""
+        assert normalise_serial("1C6920F1B188") == "1C6920F1B188"

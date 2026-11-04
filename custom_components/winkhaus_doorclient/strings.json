@@ -16,7 +16,7 @@
             },
             "auth": {
                 "title": "Authentication",
-                "description": "Please enter the password for {serial_number}.",
+                "description": "Please enter the password for {serial_number}.\n\nThe lock only answers once external API access is switched on in the doorControl app: gear icon > System > Parameters > enable the external API, then Apply. This needs the Administrator role. See the [prerequisites](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
                 "data": {
                     "username": "Username",
                     "password": "Password"
@@ -24,7 +24,9 @@
             },
             "manual": {
                 "title": "Manual Configuration",
+                "description": "Enter the connection details of your lock.\n\nThe serial number is part of the key the lock checks, so it has to match exactly. Pick the model and enter the number as printed - with or without the WH_ prefix, which is filled in for you.\n\nThe lock only answers once external API access is switched on in the doorControl app: gear icon > System > Parameters > enable the external API, then Apply. This needs the Administrator role. See the [prerequisites](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
                 "data": {
+                    "model": "Lock model",
                     "serial_number": "Serial Number",
                     "ip_address": "IP Address",
                     "username": "Username",
@@ -49,9 +51,10 @@
             }
         },
         "error": {
-            "cannot_connect": "Failed to connect",
+            "cannot_connect": "Failed to connect. If the lock is reachable on the network, check that external API access is enabled in the doorControl app.",
             "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
+            "unknown": "Unexpected error",
+            "invalid_serial": "The lock did not accept that serial number. The password is correct, so check the number and the selected model."
         },
         "abort": {
             "already_configured": "Device is already configured",

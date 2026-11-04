@@ -18,7 +18,7 @@
             },
             "auth": {
                 "title": "Anmeldung",
-                "description": "Bitte gib das Passwort für **{serial_number}** ein.",
+                "description": "Bitte gib das Passwort für **{serial_number}** ein.\n\nDas Schloss antwortet erst, wenn in der doorControl-App der externe API-Zugriff eingeschaltet ist: Zahnrad > System > Parameter > **Externe API aktivieren**, danach **Übernehmen**. Dafür wird die Rolle Administrator benötigt. Siehe [Voraussetzungen](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
                 "data": {
                     "username": "Benutzername",
                     "password": "Passwort"
@@ -26,8 +26,9 @@
             },
             "manual": {
                 "title": "Manuelle Konfiguration",
-                "description": "Gib die Verbindungsdaten deines Schlosses ein.",
+                "description": "Gib die Verbindungsdaten deines Schlosses ein.\n\nDie Seriennummer geht in den Schlüssel ein, den das Schloss prüft, und muss deshalb exakt stimmen. Wähle das Modell und gib die Nummer so ein, wie sie aufgedruckt ist - mit oder ohne das Präfix WH_, das wird ergänzt.\n\nDas Schloss antwortet erst, wenn in der doorControl-App der externe API-Zugriff eingeschaltet ist: Zahnrad > System > Parameter > **Externe API aktivieren**, danach **Übernehmen**. Dafür wird die Rolle Administrator benötigt. Siehe [Voraussetzungen](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
                 "data": {
+                    "model": "Schlossmodell",
                     "serial_number": "Seriennummer",
                     "ip_address": "IP-Adresse",
                     "username": "Benutzername",
@@ -52,9 +53,10 @@
             }
         },
         "error": {
-            "cannot_connect": "Verbindungsaufbau gescheitert",
+            "cannot_connect": "Verbindungsaufbau gescheitert. Falls das Schloss im Netzwerk erreichbar ist, prüfe, ob in der doorControl-App der externe API-Zugriff eingeschaltet ist.",
             "invalid_auth": "Benutzername oder Passwort falsch.",
-            "unknown": "Ein unerwarteter Fehler ist aufgetreten."
+            "unknown": "Ein unerwarteter Fehler ist aufgetreten.",
+            "invalid_serial": "Das Schloss hat diese Seriennummer nicht akzeptiert. Das Passwort stimmt, prüfe also die Nummer und das gewählte Modell."
         },
         "abort": {
             "already_configured": "Dieses Gerät ist bereits konfiguriert.",

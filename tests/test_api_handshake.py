@@ -270,3 +270,70 @@ class TestConnectionErrors:
             await client.connect_and_monitor()
 
         assert pausen == [5]
+
+
+class TestVerifyCredentials:
+    """The check the config flow runs before it creates an entry.
+
+    HTTP authenticates with basic auth and never sees the serial number, so
+    a wrong one used to pass setup and surface only as a WebSocket that
+    never authenticated. This is where it gets caught - but only a refusal
+    counts as evidence.
+    """
+
+    async def test_an_accepted_handshake_confirms_the_credentials(self, client) -> None:
+        lock = FakeLock(client, authenticate=True)
+
+        with patch(
+            "custom_components.winkhaus_doorclient.api.websockets.connect",
+            return_value=lock,
+        ), patch(
+            "custom_components.winkhaus_doorclient.api.os.urandom",
+            return_value=CLIENT_CHALLENGE,
+        ):
+            assert await client.verify_credentials() is True
+
+    async def test_a_refused_handshake_is_a_definite_no(self, client) -> None:
+        lock = FakeLock(client, authenticate=False)
+
+        with patch(
+            "custom_components.winkhaus_doorclient.api.websockets.connect",
+            return_value=lock,
+        ), patch(
+            "custom_components.winkhaus_doorclient.api.os.urandom",
+            return_value=CLIENT_CHALLENGE,
+        ):
+            assert await client.verify_credentials() is False
+
+    async def test_an_unreachable_socket_says_nothing(self, client) -> None:
+        """A blocked WebSocket must not be read as a wrong serial number."""
+        with patch(
+            "custom_components.winkhaus_doorclient.api.websockets.connect",
+            side_effect=OSError("no route to host"),
+        ):
+            assert await client.verify_credentials() is None
+
+    async def test_a_timeout_says_nothing_either(self, client) -> None:
+        class NeverConnects:
+            async def __aenter__(self):
+                await asyncio.sleep(3600)
+
+            async def __aexit__(self, *args):
+                return False
+
+        with patch(
+            "custom_components.winkhaus_doorclient.api.websockets.connect",
+            return_value=NeverConnects(),
+        ):
+            assert await client.verify_credentials(timeout=0.05) is None
+
+    async def test_a_malformed_greeting_says_nothing(self, client) -> None:
+        """Garbage on the wire is not evidence about the credentials."""
+        lock = FakeLock(client)
+        lock.greeting = "this should have been binary"
+
+        with patch(
+            "custom_components.winkhaus_doorclient.api.websockets.connect",
+            return_value=lock,
+        ):
+            assert await client.verify_credentials() is None
