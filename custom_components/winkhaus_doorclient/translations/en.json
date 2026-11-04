@@ -3,6 +3,7 @@
         "step": {
             "user": {
                 "title": "Setup Method",
+                "description": "How would you like to connect to the Winkhaus lock?",
                 "menu_options": {
                     "scan": "Search via Network (Auto-Discovery)",
                     "manual": "Manual Input"
@@ -10,13 +11,14 @@
             },
             "pick": {
                 "title": "Select Device",
+                "description": "Pick the lock that was found on the network.",
                 "data": {
                     "device": "Found Device"
                 }
             },
             "auth": {
                 "title": "Authentication",
-                "description": "Please enter the password for {serial_number}.\n\nThe lock only answers once external API access is switched on in the doorControl app: gear icon > System > Parameters > enable the external API, then Apply. This needs the Administrator role. See the [prerequisites](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
+                "description": "Please enter the password for {serial_number}.\n\nThe lock only answers once external API access is switched on in the doorControl app: gear icon > System > Parameters > enable the external API, then Apply. This needs the Administrator role. See the [prerequisites]({docs_url}).",
                 "data": {
                     "username": "Username",
                     "password": "Password"
@@ -24,7 +26,7 @@
             },
             "manual": {
                 "title": "Manual Configuration",
-                "description": "Enter the connection details of your lock.\n\nThe serial number is part of the key the lock checks, so it has to match exactly. Pick the model and enter the number as printed - with or without the WH_ prefix, which is filled in for you.\n\nThe lock only answers once external API access is switched on in the doorControl app: gear icon > System > Parameters > enable the external API, then Apply. This needs the Administrator role. See the [prerequisites](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
+                "description": "Enter the connection details of your lock.\n\nThe serial number is part of the key the lock checks, so it has to match exactly. Pick the model and enter the number as printed - with or without the WH_ prefix, which is filled in for you.\n\nThe lock only answers once external API access is switched on in the doorControl app: gear icon > System > Parameters > enable the external API, then Apply. This needs the Administrator role. See the [prerequisites]({docs_url}).",
                 "data": {
                     "model": "Lock model",
                     "serial_number": "Serial Number",

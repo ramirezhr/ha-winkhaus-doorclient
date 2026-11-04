@@ -244,6 +244,35 @@ async def test_discovery_does_not_re_check_the_serial(
     accept_handshake.assert_not_awaited()
 
 
+# ------------------------------------------------------- description links
+
+async def test_the_manual_form_supplies_the_docs_link(hass: HomeAssistant) -> None:
+    """The link lives in code, so every form that shows it has to pass it.
+
+    hassfest refuses a URL inside a translated string, so the description
+    carries {docs_url} and the step fills it in. A step that forgets leaves
+    the raw placeholder on screen.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "manual"}
+    )
+
+    assert "docs_url" in result["description_placeholders"]
+
+
+async def test_the_form_still_has_the_link_after_an_error(hass: HomeAssistant) -> None:
+    flow_id = await start_manual(hass)
+
+    with patch(CONNECT, new_callable=AsyncMock, return_value=False):
+        result = await hass.config_entries.flow.async_configure(flow_id, entry_data())
+
+    assert result["type"] is data_entry_flow.FlowResultType.FORM
+    assert "docs_url" in result["description_placeholders"]
+
+
 # ------------------------------------------------------------------- zeroconf
 
 def discovery(host: str = "192.168.1.51", serial: str | None = SERIAL):

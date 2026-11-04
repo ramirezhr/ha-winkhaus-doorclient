@@ -33,6 +33,7 @@ from .const import (
     MODE_HYBRID,
     MODE_POLLING,
     CONF_MODEL,
+    DOCS_URL,
     MODEL_BLUEMOTION,
     MODEL_EAV4,
     normalise_serial,
@@ -204,7 +205,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_USERNAME, default="admin"): cv.string,
                 vol.Required(CONF_PASSWORD): cv.string,
             }),
-            description_placeholders={"serial_number": serial},
+            description_placeholders={"serial_number": serial, "docs_url": DOCS_URL},
             errors=errors
         )
 
@@ -217,6 +218,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="manual",
             data_schema=manual_schema(),
+            description_placeholders={"docs_url": DOCS_URL},
             last_step=False
         )
 
@@ -438,6 +440,7 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="manual",
             data_schema=manual_schema({**data, CONF_MODEL: model or MODEL_BLUEMOTION}),
+            description_placeholders={"docs_url": DOCS_URL},
             errors=errors
         )
 

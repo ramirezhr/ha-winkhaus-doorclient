@@ -14,6 +14,11 @@ MODE_POLLING = "polling"
 # together with the user name, so it has to match the lock character for
 # character. The model prefix is part of it, and that is the part people
 # leave off when they copy the number from the sticker.
+# hassfest rejects a URL inside a translated string: it has to arrive as a
+# description placeholder, so that a translator cannot be handed a link to
+# mistype and every step supplies the same one.
+DOCS_URL = "https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites"
+
 CONF_MODEL = "model"
 MODEL_BLUEMOTION = "bluemotion_plus"
 MODEL_EAV4 = "eav4_plus"

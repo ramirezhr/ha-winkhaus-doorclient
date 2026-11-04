@@ -236,3 +236,67 @@ class TestSerialNormalisation:
     def test_without_a_model_nothing_is_invented(self):
         """The flow validates against the lock; guessing would hide the error."""
         assert normalise_serial("1C6920F1B188") == "1C6920F1B188"
+
+
+# ------------------------------------------------- translation file rules
+
+class TestTranslationRules:
+    """The hassfest rules we have tripped over, checked before the CI does.
+
+    Both of these reached main once: a placeholder wrapped in single quotes,
+    and a URL written into a description. Neither is visible in review, and
+    the nightly run reports them a day later.
+    """
+
+    @staticmethod
+    def _strings(name):
+        import json
+        import pathlib
+
+        base = pathlib.Path(__file__).parent.parent / "custom_components" / "winkhaus_doorclient"
+        return json.loads((base / name).read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _walk(node, path=""):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield from TestTranslationRules._walk(value, f"{path}.{key}" if path else key)
+        elif isinstance(node, str):
+            yield path, node
+
+    FILES = ["strings.json", "translations/en.json", "translations/de.json"]
+
+    @pytest.mark.parametrize("name", FILES)
+    def test_no_placeholder_sits_in_single_quotes(self, name):
+        """ICU reads a single quote as an escape, so the placeholder dies."""
+        import re
+
+        offenders = [
+            path
+            for path, text in self._walk(self._strings(name))
+            if re.search(r"'[^']*\{[^}]*\}[^']*'", text)
+        ]
+        assert not offenders, offenders
+
+    @pytest.mark.parametrize("name", FILES)
+    def test_no_url_is_written_into_a_string(self, name):
+        """Links belong in description_placeholders, not in a translation."""
+        offenders = [
+            path for path, text in self._walk(self._strings(name)) if "http://" in text or "https://" in text
+        ]
+        assert not offenders, offenders
+
+    def test_strings_and_english_stay_identical(self):
+        import pathlib
+
+        base = pathlib.Path(__file__).parent.parent / "custom_components" / "winkhaus_doorclient"
+        assert (base / "strings.json").read_text(encoding="utf-8") == (
+            base / "translations" / "en.json"
+        ).read_text(encoding="utf-8")
+
+    def test_every_language_offers_the_same_keys(self):
+        """A key only in one file is a string someone will never see."""
+        def keys(name):
+            return {path for path, _ in self._walk(self._strings(name))}
+
+        assert keys("strings.json") == keys("translations/de.json")

@@ -18,7 +18,7 @@
             },
             "auth": {
                 "title": "Anmeldung",
-                "description": "Bitte gib das Passwort für **{serial_number}** ein.\n\nDas Schloss antwortet erst, wenn in der doorControl-App der externe API-Zugriff eingeschaltet ist: Zahnrad > System > Parameter > **Externe API aktivieren**, danach **Übernehmen**. Dafür wird die Rolle Administrator benötigt. Siehe [Voraussetzungen](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
+                "description": "Bitte gib das Passwort für **{serial_number}** ein.\n\nDas Schloss antwortet erst, wenn in der doorControl-App der externe API-Zugriff eingeschaltet ist: Zahnrad > System > Parameter > **Externe API aktivieren**, danach **Übernehmen**. Dafür wird die Rolle Administrator benötigt. Siehe [Voraussetzungen]({docs_url}).",
                 "data": {
                     "username": "Benutzername",
                     "password": "Passwort"
@@ -26,7 +26,7 @@
             },
             "manual": {
                 "title": "Manuelle Konfiguration",
-                "description": "Gib die Verbindungsdaten deines Schlosses ein.\n\nDie Seriennummer geht in den Schlüssel ein, den das Schloss prüft, und muss deshalb exakt stimmen. Wähle das Modell und gib die Nummer so ein, wie sie aufgedruckt ist - mit oder ohne das Präfix WH_, das wird ergänzt.\n\nDas Schloss antwortet erst, wenn in der doorControl-App der externe API-Zugriff eingeschaltet ist: Zahnrad > System > Parameter > **Externe API aktivieren**, danach **Übernehmen**. Dafür wird die Rolle Administrator benötigt. Siehe [Voraussetzungen](https://github.com/ramirezhr/ha-winkhaus-doorclient#-prerequisites).",
+                "description": "Gib die Verbindungsdaten deines Schlosses ein.\n\nDie Seriennummer geht in den Schlüssel ein, den das Schloss prüft, und muss deshalb exakt stimmen. Wähle das Modell und gib die Nummer so ein, wie sie aufgedruckt ist - mit oder ohne das Präfix WH_, das wird ergänzt.\n\nDas Schloss antwortet erst, wenn in der doorControl-App der externe API-Zugriff eingeschaltet ist: Zahnrad > System > Parameter > **Externe API aktivieren**, danach **Übernehmen**. Dafür wird die Rolle Administrator benötigt. Siehe [Voraussetzungen]({docs_url}).",
                 "data": {
                     "model": "Schlossmodell",
                     "serial_number": "Seriennummer",
