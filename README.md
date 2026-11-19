@@ -626,7 +626,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - **Documentation:** [GitHub Wiki](https://github.com/ramirezhr/ha-winkhaus-doorclient/wiki)
 - **Issues:** [GitHub Issues](https://github.com/ramirezhr/ha-winkhaus-doorclient/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/ramirezhr/ha-winkhaus-doorclient/discussions)
-- **Community:** [Home Assistant Forum](https://community.home-assistant.io/)
+- **Community:** [Home Assistant Forum thread](https://community.home-assistant.io/t/winkhaus-bluemotion-eav4-motor-locks-in-home-assistant/1035497) - questions, setup help and feedback
 
 ---
 
