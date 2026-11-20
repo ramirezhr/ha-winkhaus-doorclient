@@ -6,6 +6,7 @@ stays invisible and a long one is reported once, without dropping the state
 in between.
 """
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,7 +17,10 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.winkhaus_doorclient.api import DoorClient
+from custom_components.winkhaus_doorclient.api import (
+    WATCHDOG_SILENCE_THRESHOLD,
+    DoorClient,
+)
 from custom_components.winkhaus_doorclient.const import (
     CONF_SCAN_INTERVAL,
     CONF_UPDATE_MODE,
@@ -26,6 +30,7 @@ from custom_components.winkhaus_doorclient.const import (
 from custom_components.winkhaus_doorclient.coordinator import (
     HYBRID_SCAN_INTERVAL,
     MAX_FAILURES_BEFORE_ALERT,
+    STALE_STATE_AFTER,
     WinkhausCoordinator,
     WinkhausSystemCoordinator,
 )
@@ -256,3 +261,127 @@ class TestOutageLogging:
 
         issue = ir.async_get(hass).async_get_issue(DOMAIN, coordinator.issue_id)
         assert issue.translation_placeholders["failures"] == str(MAX_FAILURES_BEFORE_ALERT)
+
+
+# ------------------------------------------------------------- stale state
+
+class TestStaleState:
+    """When the shown state is too old to keep claiming it.
+
+    Keeping the last known state through an outage is right for a moment and
+    wrong for an hour: the bolt can be thrown with a key, the keypad or the
+    app while nothing is listening, so "locked" without a recent answer
+    describes the past. Home Assistant's `entity-unavailable` rule says so
+    too, and this is where the line is drawn.
+    """
+
+    async def test_a_recent_success_keeps_the_last_state(self, coordinator, client):
+        """One failed fetch right after a good one changes nothing."""
+        with patch.object(client, "get_states", return_value=STATES):
+            await coordinator.async_refresh()
+
+        with patch.object(client, "get_states", side_effect=OSError("no route")):
+            await coordinator.async_refresh()
+
+        assert coordinator.last_update_success is True
+        assert coordinator.data == STATES
+
+    async def test_entities_go_unavailable_when_the_state_goes_stale(
+        self, coordinator, client
+    ):
+        with patch.object(client, "get_states", return_value=STATES):
+            await coordinator.async_refresh()
+
+        coordinator._last_good = time.time() - (STALE_STATE_AFTER + 10)
+
+        with patch.object(client, "get_states", side_effect=OSError("no route")):
+            await coordinator.async_refresh()
+
+        assert coordinator.last_update_success is False
+
+    async def test_the_data_itself_is_kept(self, coordinator, client):
+        """Only the claim goes, not the content - diagnostics still show it."""
+        with patch.object(client, "get_states", return_value=STATES):
+            await coordinator.async_refresh()
+
+        coordinator._last_good = time.time() - (STALE_STATE_AFTER + 10)
+
+        with patch.object(client, "get_states", side_effect=OSError("no route")):
+            await coordinator.async_refresh()
+
+        assert coordinator.data == STATES
+
+    async def test_a_push_keeps_the_state_fresh(self, coordinator):
+        """In hybrid mode pushes are what keeps the age down, not polls."""
+        coordinator._last_good = time.time() - (STALE_STATE_AFTER + 10)
+        assert coordinator.state_is_stale() is True
+
+        coordinator.async_set_updated_data(STATES)
+
+        assert coordinator.state_is_stale() is False
+
+    async def test_a_successful_fetch_keeps_the_state_fresh(self, coordinator, client):
+        coordinator._last_good = time.time() - (STALE_STATE_AFTER + 10)
+
+        with patch.object(client, "get_states", return_value=STATES):
+            await coordinator.async_refresh()
+
+        assert coordinator.state_is_stale() is False
+
+    async def test_a_push_brings_the_entities_back(self, coordinator, client):
+        """Recovery needs no path of its own: the first message is enough."""
+        with patch.object(client, "get_states", return_value=STATES):
+            await coordinator.async_refresh()
+
+        coordinator._last_good = time.time() - (STALE_STATE_AFTER + 10)
+        with patch.object(client, "get_states", side_effect=OSError("no route")):
+            await coordinator.async_refresh()
+        assert coordinator.last_update_success is False
+
+        coordinator.async_set_updated_data(STATES)
+
+        assert coordinator.last_update_success is True
+
+    def test_the_window_outlasts_a_nudge_cycle_plus_a_reconnect(self):
+        """The reason this is not 300, and not 360 either.
+
+        In a quiet household the watchdog's nudge is the only thing that
+        refreshes the state, so the age sawtooths up to the nudge cycle -
+        measured at 306 s over 249 nudges on a live lock. A reconnect adds
+        to that, and the window has to cover both, or a dropped socket
+        makes every entity flicker to unavailable and straight back.
+
+        180 s of headroom over the threshold is the floor, not the target.
+        """
+        assert STALE_STATE_AFTER >= WATCHDOG_SILENCE_THRESHOLD + 180
+
+    def test_the_window_closes_before_the_scheduled_fetch_gives_up(self):
+        """Why it is not simply 600.
+
+        Once the socket dies the nudges stop, and the scheduled fetch is
+        the next thing that runs. With the window below that interval, the
+        first failed fetch already lands on the far side of it. Set the two
+        equal and that failure lands exactly on the boundary, pushing
+        detection out by another full interval.
+        """
+        assert STALE_STATE_AFTER < HYBRID_SCAN_INTERVAL
+
+    async def test_polling_mode_stays_available_without_a_socket(
+        self, hass, entry, client
+    ):
+        """Freshness comes from the coordinator's own success, not the socket.
+
+        Hanging this on the client's socket timestamp would have marked every
+        polling installation unavailable from the first second, because in
+        polling mode no socket is ever opened.
+        """
+        hass.config_entries.async_update_entry(
+            entry, options={CONF_UPDATE_MODE: MODE_POLLING, CONF_SCAN_INTERVAL: 60}
+        )
+        polling = WinkhausCoordinator(hass, entry, client)
+
+        with patch.object(client, "get_states", return_value=STATES):
+            await polling.async_refresh()
+
+        assert polling.last_update_success is True
+        assert polling.state_is_stale() is False

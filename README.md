@@ -16,12 +16,12 @@ This integration communicates directly with your door controller over the local 
 
 ## ✨ Features
 
-### 🚀 Version 2.0+ (Hybrid Mode)
+### 🚀 Version 2.0+ (Push Mode)
 
 * **⚡ WebSocket Real-time Updates:** Instant status changes with <0.5s latency
-* **🔄 Hybrid Communication:** WebSocket primary, HTTP fallback for maximum reliability
-* **📊 Half the HTTP Requests:** ~720/day vs ~1,440/day in pure polling mode
-* **🛡️ Triple Safety Net:** Protocol pings (20s) + Watchdog (75s) + HTTP polling (120s)
+* **🔄 Push Communication:** WebSocket primary, HTTPS fallback for maximum reliability
+* **📊 Almost No HTTPS At All:** While the WebSocket is up, push mode makes ~288 requests a day over that socket and practically none over HTTPS - against ~1,440 HTTPS requests a day in pure polling mode
+* **🛡️ Triple Safety Net:** Protocol pings (20s) + Watchdog (300s) + scheduled fetch (600s)
 * **📈 Connection Statistics:** Uptime, reconnect count and link status as lock attributes
 
 ### 🔓 Core Features
@@ -33,7 +33,7 @@ This integration communicates directly with your door controller over the local 
 * **🔁 Clear Errors Button:** Resets a fault state on the lock without a power cycle
 * **🔍 Auto-Discovery:** Automatically finds devices via Zeroconf/mDNS
 * **🔐 Secure Local Connection:** HTTPS with legacy SSL compatibility
-* **🛡️ Network Resilience:** Maintains last known state during temporary outages
+* **🛡️ Network Resilience:** Rides out a short outage on the last known state, then reports unavailable rather than guessing
 * **🔄 Smart Reauth:** Automatic password update prompts via Repairs dashboard
 * **🏠 Multi-Lock Support:** Unlimited locks, each with independent WebSocket connection
 
@@ -68,7 +68,7 @@ actions map to the door's night mode, day mode and latch, so ordinary
 `lock.lock` automations work as expected.
 
 **React to the door opening.** The door contact is a separate binary sensor,
-independent of the lock state, and updates within a second in hybrid mode.
+independent of the lock state, and updates within a second in push mode.
 
 **Notice a fault before it becomes a problem.** The error sensor reports a
 blocked motor or overcurrent, and the Clear Errors button resets the state
@@ -94,7 +94,7 @@ unaffected on both.
 
 **The connection drops occasionally.** The lock's WebSocket implementation
 does not follow the specification closely; a strict parser rejects the odd
-frame and closes the connection. Reconnect and HTTP fallback handle it, and
+frame and closes the connection. Reconnect and HTTPS fallback handle it, and
 sessions of more than 48 hours are normal, but the log will show the odd
 `WS session ended` entry.
 
@@ -109,12 +109,21 @@ lifetime of the lock. The lock's own operation counters do persist.
 
 **No battery reporting.** See Supported Devices above.
 
-**Entities keep their last state during an outage.** Rather than going
-unavailable, the lock shows the last known state and a repair issue appears
-after three failed updates. For a door lock a status from a few minutes ago
-is more useful than a greyed-out card - but it does mean the card is not
-proof the lock is reachable right now. The `websocket_connected` attribute
-and the repair issue are.
+**Entities keep their last state for about nine minutes, then go
+unavailable.** A short outage should not make the dashboard flicker, so the
+last known state stays up while a reconnect runs - measured on a live lock,
+that takes well under a minute even when the first attempt fails. Once
+nothing has arrived for nine minutes, the entities become unavailable
+instead: the bolt can be thrown with a key,
+the keypad or the app while nothing is listening, so a state nobody has
+confirmed for that long is a claim about the past. A repair issue appears
+after three failed updates, and the first message from the lock brings the
+entities straight back.
+
+If you have automations that test for a state directly, such as
+`is_state('lock.front_door', 'locked')`, note that the condition is false
+while the entity is unavailable. Guard those with `has_value()` if an
+outage should not count as "not locked".
 
 ---
 
@@ -225,30 +234,50 @@ cannot be changed, since a different lock needs its own entry.
 
 The integration supports two operation modes:
 
-### 1️⃣ Hybrid Mode (Default - Recommended)
+### 1️⃣ Push Mode (Default - Recommended)
 
 **Best for:** Real-time control and instant status updates
 
+*Called "Hybrid" up to 2.7.0. The name changed because the behaviour did: it really was a hybrid while the WebSocket carried the pushes and HTTPS did the polling. Since 3.0.0 everything travels over the socket and HTTP is only the fallback - which is what Home Assistant calls `local_push`. The stored option value is unchanged, so nothing needs reconfiguring.*
+
 * ⚡ WebSocket primary: Commands in <0.5s
-* 🛡️ HTTP safety net: Polls every 120s as backup
+* 🛡️ Scheduled backstop: Fetches every 600s, over the socket as well, and only when nothing else is coming through
 * 📡 Protocol pings: Keeps connection alive every 20s
 * 🔄 Auto-recovery: Reconnects automatically
 
 **Performance:**
-- HTTP Requests/Day: ~720 (-50%)
+- Requests/Day: ~288, over the WebSocket; HTTPS only when the socket is unavailable
 - Command Latency: <0.5s
 - Status Latency: <1s - the lock pushes changes as they happen
+
+**Which transport carries what, in push mode:**
+
+| Traffic | Transport |
+|---|---|
+| Status pushes from the lock | WebSocket |
+| Scheduled fetch every 600s | WebSocket, HTTPS if the socket cannot carry it |
+| Watchdog nudge after 300s of silence | WebSocket |
+| Status request right after the handshake | WebSocket |
+| Commands (lock, unlock, open, day/night) | WebSocket, HTTPS if the socket cannot carry it |
+| Reads (system state, configuration) | WebSocket, HTTPS if the socket cannot carry it |
+| Watchdog's recovery fetch | HTTPS, deliberately |
+| Refresh right after a command that went over HTTPS | HTTPS, deliberately |
+
+The last two are the only callers that ask for HTTPS on purpose: the first
+because it runs precisely when the socket has stopped answering, the second
+because a command that had to fall back has no socket to read the result
+from either.
 
 ### 2️⃣ Classic Polling Mode
 
 **Best for:** Maximum compatibility
 
-* 🔌 HTTP-only: No WebSocket
+* 🔌 HTTPS-only: No WebSocket
 * ⚙️ Configurable: 30-300s interval (default: 60s)
 * 📶 Simple: Works on any network
 
 **Performance:**
-- HTTP Requests/Day: ~1,440 (at 60s)
+- HTTPS Requests/Day: ~1,440 (at 60s, all of them over HTTPS by design)
 - Command Latency: 2-3s
 - Status Latency: 0-60s - a change is only noticed at the next poll
 
@@ -272,7 +301,7 @@ installation. The examples below use the serial `SERIAL123`.
 | `sensor.winkhaus_door_serial123_unlock_cnt` | Sensor | Total unlock operations |
 | `sensor.winkhaus_door_serial123_error_cnt` | Sensor | Error counter |
 | `sensor.winkhaus_door_serial123_error_state` | Sensor | Current fault as an enum, with `all_errors` and `error_count` attributes (diagnostic) |
-| `sensor.winkhaus_door_serial123_connection_mode` | Sensor | Hybrid or Polling (diagnostic) |
+| `sensor.winkhaus_door_serial123_connection_mode` | Sensor | Push or Polling (diagnostic) |
 
 **Display names** follow the name configured on the lock itself. A door named
 "Front Door" shows up as *Front Door Lock*, *Front Door Mode* and so on, while
@@ -409,7 +438,7 @@ automation:
       - service: notify.mobile_app
         data:
           title: "🔐 Door Connection Issue"
-          message: "WebSocket down for 10 minutes. HTTP fallback is still active."
+          message: "WebSocket down for 10 minutes. HTTPS fallback is still active."
 ```
 
 ---
@@ -423,8 +452,12 @@ The integration fully supports multiple Winkhaus locks:
 Each lock operates independently with:
 * ✅ Dedicated WebSocket connection
 * ✅ Independent coordinators
-* ✅ Separate HTTP sessions
+* ✅ Its own credentials and derived key material
 * ✅ Individual offline handling
+
+The HTTPS side shares Home Assistant's pooled client session, which is the
+documented approach and keeps connection handling in one place - it is the one
+thing the locks do not each have their own of.
 
 ### Setup Multiple Locks
 
@@ -457,22 +490,32 @@ automation:
 
 ### Encryption & Authentication
 
-* **Transport:** HTTPS (TLS 1.2) for HTTP, AES-CCM for WebSocket
+* **HTTP path:** HTTPS with TLS 1.2 on port 443
+* **WebSocket path:** plain `ws://` on port 80 - the transport itself is not
+  encrypted; every frame inside it is encrypted with AES-256-CCM at the
+  application layer
 * **Key Exchange:** X25519 Elliptic Curve Diffie-Hellman
 * **Authentication:** PBKDF2 with HMAC-SHA1 challenge-response
 * **Local Only:** No cloud servers, all communication stays on your network
 
 ### Important Notes
 
-* ✅ Connection is **encrypted** via TLS/AES-CCM
+* ✅ Everything the integration sends and receives is **encrypted**: by TLS on
+  the HTTPS path, by AES-256-CCM on the WebSocket
+* ⚠️ On the WebSocket that encryption is the **only** layer. The lock refuses
+  a WebSocket upgrade on its TLS port, so there is no `wss://` to switch to -
+  this is a device limitation, not a setting. Someone capturing traffic on the
+  same network sees frame headers, counters, lengths and timing, which is
+  enough to tell that a lock is there and roughly when it is being operated.
+  The contents stay closed as long as the password and the serial number do.
 * ✅ Communication **only within local network**
 * ✅ **No data** sent to external servers
-* ⚠️ Uses self-signed certificates (device limitation)
+* ⚠️ Uses self-signed certificates on the HTTPS path (device limitation)
 
 ### Best Practices
 
 1. 🔐 Change default admin password
-2. 🌐 Use separate IoT VLAN for locks
+2. 🌐 Use a separate IoT VLAN for locks - this is the practical answer to the unencrypted WebSocket transport above
 3. 🚫 Restrict network access to HA server only
 4. 🔄 Keep integration updated
 
@@ -500,7 +543,7 @@ The integration uses `SECLEVEL=1` to maintain compatibility with the door contro
 
 **Solutions:**
 - Check Home Assistant logs for errors
-- The integration keeps the last known state across three failed polls before raising an alert (about six minutes in Hybrid mode, three in Polling mode at the default interval)
+- The integration raises a repair alert after three failed polls, and keeps showing the last known state until nothing has arrived for nine minutes - after that the entities go unavailable
 - Connection auto-recovers when the device comes back online
 - If persistent, try reloading the integration
 
@@ -531,7 +574,7 @@ reaches more than a few hours
 - Reduce network congestion and check for interference
 - Look for `WS session ended after HH:MM:SS` in the log to see how long sessions last
 - Occasional reconnects are normal and handled automatically; commands keep working
-  through the HTTP fallback while the link is down
+  through the HTTPS fallback while the link is down
 
 ### Commands Not Working
 

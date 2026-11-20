@@ -7,6 +7,7 @@ counterpart - not merely that the code runs.
 """
 
 import asyncio
+import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -69,6 +70,14 @@ class FakeLock:
             self.shared_key = self._private.exchange(
                 x25519.X25519PublicKey.from_public_bytes(data[4:36])
             )
+            return
+
+        # Everything after the handshake is a request, and the lock answers
+        # every request. Staying silent here would make the client wait out
+        # its timeout instead of getting on with the session.
+        waiting = self._client._ws_reply
+        if waiting is not None and not waiting.done():
+            waiting.set_result('{"XC_SUC": {}}')
 
     async def close(self):
         self.closed = True
@@ -153,13 +162,21 @@ class TestSuccessfulHandshake:
         assert client.connection_count == 1
 
     async def test_the_status_is_requested_right_away(self, client):
-        """Nothing arrives until the lock is asked, so it is asked at once."""
+        """Nothing arrives until the lock is asked, so it is asked at once.
+
+        The frame itself is checked rather than a mock standing in for the
+        send. An earlier version of this test patched out the call, which is
+        why it stayed green while that very call started waiting for an answer
+        the lock does not give and put the monitor in a reconnect loop.
+        """
         lock = FakeLock(client)
 
-        with patch.object(client, "async_send_payload", new_callable=AsyncMock) as send:
-            await run_once(client, lock)
+        await run_once(client, lock)
 
-        assert send.await_args.args[0] == "/api/v1/getStates"
+        # The handshake is the first thing the client sends; the nudge follows.
+        nudge = lock.received[-1]
+        endpoint = client._decrypt_own_frame(nudge).split("\n", 1)[0]
+        assert endpoint == "/api/v1/getStates"
 
 
 class TestFailedHandshake:
@@ -213,6 +230,56 @@ class TestFailedHandshake:
         assert "Auth Failed" in caplog.text
 
 
+class TestMalformedAuthReply:
+    async def test_a_text_auth_reply_is_rejected(self, client, caplog):
+        """The greeting guard has a sibling: the proof must be binary too.
+
+        A text frame here cannot be sliced for the HMAC comparison, so it is
+        refused by name instead of failing somewhere further in.
+        """
+        lock = FakeLock(client)
+
+        async def recv():
+            if not lock.received:
+                return lock.greeting
+            return "this should have been binary"
+
+        lock.recv = recv
+
+        with pytest.raises(ValueError, match="unexpected text frame"):
+            await client._perform_handshake(lock)
+
+        assert "expected binary" in caplog.text
+
+
+class TestWebSocketSslContext:
+    """`_ws_ssl_context` decides by the scheme of `ws_uri`.
+
+    Worth knowing while reading this: the integration builds that URI as
+    `ws://<ip>:80/ws` and never anything else, so the branch that builds a
+    context is not reached in normal operation. The WebSocket is unencrypted
+    on the wire - the X25519 exchange and AES-CCM inside it are the only
+    protection the channel has, which is presumably why the protocol carries
+    them at all. These tests pin the function's contract, not a situation the
+    integration currently produces.
+    """
+
+    def test_a_plain_ws_uri_needs_no_context(self, client):
+        assert client.ws_uri.startswith("ws://")
+        assert client._ws_ssl_context() is None
+
+    def test_a_wss_uri_gets_a_context_that_accepts_the_device_certificate(self, client):
+        """The locks present a self-signed certificate for an IP address, so
+        hostname and chain checks would both fail."""
+        client.ws_uri = "wss://10.10.30.197:443/ws"
+
+        ctx = client._ws_ssl_context()
+
+        assert ctx is not None
+        assert ctx.check_hostname is False
+        assert ctx.verify_mode is ssl.CERT_NONE
+
+
 class TestConnectionErrors:
     async def test_a_refused_connection_is_retried(self, client, caplog):
         pausen = []
@@ -229,6 +296,55 @@ class TestConnectionErrors:
 
         assert pausen == [5]
         assert client.ws_connected is False
+
+    async def test_a_silent_lock_does_not_hang_the_handshake(self, client, caplog):
+        """A lock may accept the socket and then say nothing at all.
+
+        recv() has no deadline of its own, and the keepalive only closes a
+        socket that stops answering pings - a lock whose WebSocket layer is
+        alive answers them while its application stays quiet, so the monitor
+        task would park on recv() with nothing to end it. The handshake has to
+        fail on its own terms and hand the loop back for a retry.
+        """
+
+        class SilentLock:
+            """Completes the connect, then never speaks."""
+
+            async def recv(self):
+                await asyncio.Event().wait()
+
+            async def send(self, data):
+                pass
+
+            async def close(self):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+        pausen = []
+
+        async def record(seconds):
+            pausen.append(seconds)
+            client._monitor_running = False
+
+        with patch(
+            "custom_components.winkhaus_doorclient.api.websockets.connect",
+            return_value=SilentLock(),
+        ), patch(
+            "custom_components.winkhaus_doorclient.api.HANDSHAKE_TIMEOUT", 0.01
+        ), patch("asyncio.sleep", side_effect=record):
+            await client.connect_and_monitor()
+
+        # The same pause an auth failure gets: a silent lock stays silent, so
+        # retrying every few seconds only floods it and the log.
+        assert pausen == [30]
+        assert client.ws_connected is False
+        assert client.current_session_start is None
+        assert "timed out" in caplog.text.lower()
 
     async def test_the_session_state_is_cleared_after_an_error(self, client):
         client.current_session_start = 1234.0

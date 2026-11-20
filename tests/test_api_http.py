@@ -276,3 +276,63 @@ class TestSslContext:
         from custom_components.winkhaus_doorclient.api import create_legacy_ssl_context
 
         assert create_legacy_ssl_context().options & 0x4
+
+
+class TestDeviceErrorWording:
+    """What the caller is told when the lock refuses a request.
+
+    Two firmware generations word a refusal differently: 1.0.31 fills
+    "text", 1.6.2 fills "code". Reading "text" alone turned a stated reason
+    into "Unknown API error" on the newer firmware - and the single XC_ERR
+    seen in seven weeks of operation arrived without any text at all.
+    """
+
+    async def test_the_code_is_used_when_there_is_no_text(self):
+        session = responding(FakeResponse({"XC_ERR": {"code": "E_MODE_UNCHANGED"}}))
+
+        with pytest.raises(Exception, match="E_MODE_UNCHANGED"):
+            await client_with(session)._request("/api/v1/control", {"command": "day"})
+
+    async def test_an_empty_text_does_not_hide_the_code(self):
+        """An empty string is a present key, so a default on get() never fired."""
+        session = responding(FakeResponse({"XC_ERR": {"text": "", "code": 4711}}))
+
+        with pytest.raises(Exception, match="4711"):
+            await client_with(session)._request("/api/v1/control", {"command": "day"})
+
+    async def test_text_is_preferred_over_the_code(self):
+        session = responding(FakeResponse({"XC_ERR": {"text": "blocked", "code": 4711}}))
+
+        with pytest.raises(Exception, match="blocked"):
+            await client_with(session)._request("/api/v1/control", {"command": "day"})
+
+    async def test_an_error_with_neither_field_still_names_itself(self):
+        session = responding(FakeResponse({"XC_ERR": {}}))
+
+        with pytest.raises(Exception, match="Unknown API error"):
+            await client_with(session)._request("/api/v1/control", {"command": "day"})
+
+    async def test_a_zero_code_is_reported_rather_than_swallowed(self):
+        """Zero is a code the lock sent, so it is a lead. Treating it as
+        absent, which any falsy test does, replaces it with a placeholder."""
+        session = responding(FakeResponse({"XC_ERR": {"code": 0}}))
+
+        with pytest.raises(Exception, match="Device Error: 0"):
+            await client_with(session)._request("/api/v1/control", {"command": "day"})
+
+    async def test_a_null_text_falls_through_to_the_code(self):
+        """JSON null arrives as None, which is a present key with no content."""
+        session = responding(FakeResponse({"XC_ERR": {"text": None, "code": 4711}}))
+
+        with pytest.raises(Exception, match="4711"):
+            await client_with(session)._request("/api/v1/control", {"command": "day"})
+
+    async def test_an_error_that_is_not_an_object_is_reported_as_one(self):
+        """The listener has always handled a bare string here. This path called
+        .get() on it and raised AttributeError instead, which reaches the
+        coordinator as an unexpected failure rather than a device error.
+        """
+        session = responding(FakeResponse({"XC_ERR": "motor jammed"}))
+
+        with pytest.raises(Exception, match="motor jammed"):
+            await client_with(session)._request("/api/v1/control", {"command": "day"})

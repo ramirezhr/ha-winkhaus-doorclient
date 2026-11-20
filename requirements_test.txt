@@ -3,7 +3,6 @@ pytest-homeassistant-custom-component==0.13.316
 pytest-cov
 
 # Runtime dependencies from manifest.json, needed to import the integration
-requests
 cryptography
 websockets
 zeroconf

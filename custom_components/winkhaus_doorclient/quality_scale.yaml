@@ -60,11 +60,18 @@ rules:
   # All three service actions are entity services, which the rule allows
   # to be registered in the platform's async_setup_entry.
 
-  dependency-transparency: exempt
-  # The protocol implementation lives inside this repository rather than in
-  # a separate PyPI package. Splitting it out would mean maintaining two
-  # repositories for a single-device integration. Both remaining
-  # dependencies, aiohttp and websockets, are published and async.
+  dependency-transparency: done
+  # `websockets` is the only declared requirement - aiohttp comes with Home
+  # Assistant - and it meets all four points: BSD licence, published on
+  # PyPI, built and published from public GitHub Actions, and every PyPI
+  # version corresponds to a tag in its own repository.
+  #
+  # This stood as `exempt` until 3.0.0 with a comment about the protocol
+  # code living in this repository rather than in a package of its own.
+  # That answers a question the rule does not ask: it sets trust
+  # requirements for the dependencies an integration has, not for how much
+  # of its own code it has outsourced. The rule has no exceptions either,
+  # so the exemption was never available in the first place.
 
   # ---------------------------------------------------------------------
   # SILVER
@@ -92,15 +99,25 @@ rules:
   # in between goes to debug.
 
   test-coverage: done
-  # 97% overall, api.py at 100%. The listener and handshake tests build
+  # 98% overall, api.py and coordinator.py at 100%. The listener and
+  # handshake tests build
   # genuine AES-CCM frames and perform a real X25519 exchange against a
   # simulated lock, so they verify the protocol rather than a mock.
 
-  entity-unavailable: exempt
-  # Deliberate deviation. The coordinator keeps the last known state
-  # instead of marking entities unavailable, because for a door lock a
-  # status from two minutes ago is more useful than a greyed-out card.
-  # Revisit if this ever misleads anyone.
+  entity-unavailable: done
+  # Entities go unavailable once nothing has refreshed the state for
+  # STALE_STATE_AFTER (360 s), and a missing single field reads as unknown
+  # rather than as a guess - the two halves the rule asks for.
+  #
+  # This was exempt until 3.0.0, on the grounds that for a door lock a
+  # status from two minutes ago beats a greyed-out card. True for two
+  # minutes, false for twenty, and the rule's own exception list covers
+  # only integrations without entities and devices reachable on a second
+  # channel - neither of which applies here.
+  #
+  # The window is deliberately longer than the watchdog's silence
+  # threshold: in a quiet household the nudge's answer is the only thing
+  # refreshing the state, and it arrives just after 300 s.
 
   # ---------------------------------------------------------------------
   # GOLD
@@ -133,9 +150,20 @@ rules:
   # logged rather than invalidating the sensor.
 
   dynamic-devices: exempt
-  stale-devices: exempt
-  # One config entry represents exactly one lock. There are no devices
-  # appearing or disappearing behind a single entry.
+  # One config entry represents exactly one lock, tied to the lifecycle of
+  # that entry - which is the exception the rule itself names. There is
+  # nothing to discover behind an entry: the serial number is part of the
+  # key material, so a second lock needs a second entry.
+
+  stale-devices: done
+  # Nothing can go stale on its own here, for the same reason - there is no
+  # hub a device could be removed from. What the rule asks for in that case
+  # is a way for the user to clear a row by hand, and
+  # async_remove_config_entry_device provides it: removal is allowed for any
+  # device that is not the lock this entry is configured for, and refused
+  # for that one, which would only reappear on the next reload. The case it
+  # exists for is a replaced lock, whose predecessor would otherwise sit in
+  # the registry forever.
 
   # ---------------------------------------------------------------------
   # PLATINUM

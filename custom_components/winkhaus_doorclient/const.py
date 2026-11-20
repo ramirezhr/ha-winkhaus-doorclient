@@ -7,6 +7,19 @@ DOMAIN = "winkhaus_doorclient"
 CONF_SCAN_INTERVAL = "scan_interval"
 DEFAULT_SCAN_INTERVAL = 60
 CONF_UPDATE_MODE = "update_mode"
+
+# The user-facing name of MODE_HYBRID is "Push", not "Hybrid". The stored
+# token stays "hybrid" on purpose: it sits in every existing config entry
+# and is also the state value of the connection_mode sensor, so renaming it
+# would need a migration and would break an automation that tests for it -
+# in exchange for nothing a user can see. The label is a translation
+# (selector.update_mode and the sensor's state), the token is an identity.
+#
+# The name changed because the behaviour did. Up to 2.7.0 this really was a
+# hybrid: WebSocket for pushes, HTTP for the scheduled fetch. Since 3.0.0
+# everything travels over the socket and HTTP is only the fallback, which is
+# what Home Assistant calls local_push - as this integration's manifest has
+# declared all along.
 MODE_HYBRID = "hybrid"
 MODE_POLLING = "polling"
 

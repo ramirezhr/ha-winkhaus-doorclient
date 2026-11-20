@@ -6,6 +6,7 @@ construction or the counter handling drifts, decryption fails and these
 tests notice - which is exactly what would happen on the wire.
 """
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -187,12 +188,45 @@ class TestFragments:
 
         assert received == []  # no state or mode, but it decoded without error
 
-    async def test_a_packet_type_change_drops_the_buffer(self, client):
+    async def test_an_interleaved_push_does_not_drop_the_reply(self, client):
+        """The lock pushes state between the fragments of a reply.
+
+        Not a hypothetical: measured on a blueMotion+ (firmware 1.6.2) on
+        2026-11-15. A 218 s capture recorded 70 replies of ~8.4 fragments and
+        28 state pushes, and caught two pushes landing mid-reply, with 632 and
+        17 bytes already buffered.
+
+        Both types arrive on the same socket, so each is reassembled on its own
+        buffer. Sharing one buffer truncated the reply - in the 632 byte case
+        that much of an answer was thrown away - and left the remaining
+        fragments to fail decoding.
+        """
         received = await listen_to(
             client,
             [
-                frame(client, '{"incomplete', 1, final=False, packet_type=6),
+                frame(client, '{"XC_SUC":{"sta', 1, final=False, packet_type=6),
                 frame(client, {"XC_SUC": {"state": "open"}}, 2, packet_type=1),
+                frame(client, 'te":"closed"}}', 3, packet_type=6),
+            ],
+        )
+
+        assert received == [
+            [{"name": "state", "value": "open"}],    # the push
+            [{"name": "state", "value": "closed"}],  # the reply, still intact
+        ]
+
+    async def test_a_message_with_invalid_utf8_does_not_poison_its_type(self, client):
+        """One undecodable message must not cost the rest of the session.
+
+        The buffer used to be retired after decoding, so a lone bad byte
+        stayed in it and every later message of that packet type failed on
+        the same byte until the WebSocket was rebuilt.
+        """
+        received = await listen_to(
+            client,
+            [
+                frame(client, b'{"XC_SUC":{"name":"\xff"}}', 1, packet_type=6),
+                frame(client, {"XC_SUC": {"state": "open"}}, 2, packet_type=6),
             ],
         )
 
@@ -201,8 +235,7 @@ class TestFragments:
     async def test_the_buffer_is_empty_afterwards(self, client):
         await listen_to(client, [frame(client, {"XC_SUC": {"state": "open"}}, 1)])
 
-        assert len(client._rx_buffer) == 0
-        assert client._rx_type is None
+        assert client._rx_buffers == {}
 
 
 # ------------------------------------------------------- counter and cleanup
@@ -297,10 +330,129 @@ class TestBufferGuard:
         await listen_to(client, frames)
 
         assert "64 KB" in caplog.text
-        assert len(client._rx_buffer) <= 65536
+        assert all(len(buffer) <= 65536 for buffer in client._rx_buffers.values())
 
     async def test_an_error_payload_that_is_not_a_dict(self, client, caplog):
         """Firmware could report a bare string instead of the usual object."""
         await listen_to(client, [frame(client, {"XC_ERR": "motor jammed"}, 1)])
 
         assert "motor jammed" in caplog.text
+
+
+class TestReplyCorrelation:
+    """Which messages belong to a waiting request, and which do not.
+
+    The packet type is the only thing that separates them. A reply and an
+    unsolicited push can both carry a filled state object, so the shape says
+    nothing - a push handed to a waiting reader would be taken for the answer,
+    and the real answer would then be handed to the request after it.
+    """
+
+    async def test_a_reply_resolves_the_waiting_request(self, client):
+        waiting = asyncio.get_running_loop().create_future()
+        client._ws_reply = waiting
+
+        await listen_to(
+            client,
+            [frame(client, {"XC_SUC": {"firmware": "1.6.2"}}, 1, packet_type=6)],
+        )
+
+        assert waiting.done()
+        assert json.loads(waiting.result()) == {"XC_SUC": {"firmware": "1.6.2"}}
+
+    async def test_a_push_does_not_resolve_a_waiting_request(self, client):
+        """The push carries state and mode, exactly like the answer to
+        getStates would, and still must not be mistaken for it."""
+        waiting = asyncio.get_running_loop().create_future()
+        client._ws_reply = waiting
+
+        received = await listen_to(
+            client,
+            [frame(client, {"state": "closed", "mode": "day"}, 1, packet_type=1)],
+        )
+
+        assert not waiting.done()
+        assert received == [
+            [{"name": "state", "value": "closed"}, {"name": "mode", "value": "day"}]
+        ]
+
+    async def test_a_reply_with_nobody_waiting_goes_to_the_dispatch(self, client):
+        """What happens to the answers of the status nudges: no caller asked
+        for them, so they are treated as a state update."""
+        received = await listen_to(
+            client,
+            [frame(client, {"XC_SUC": {"state": "open", "mode": "night"}}, 1, packet_type=6)],
+        )
+
+        assert client._ws_reply is None
+        assert received == [
+            [{"name": "state", "value": "open"}, {"name": "mode", "value": "night"}]
+        ]
+
+    async def test_a_fragmented_reply_resolves_only_when_complete(self, client):
+        waiting = asyncio.get_running_loop().create_future()
+        client._ws_reply = waiting
+
+        await listen_to(
+            client,
+            [
+                frame(client, '{"XC_SUC":{"na', 1, final=False, packet_type=6),
+                frame(client, 'me":"Haustuer"}}', 2, packet_type=6),
+            ],
+        )
+
+        assert json.loads(waiting.result()) == {"XC_SUC": {"name": "Haustuer"}}
+
+
+class TestRejectionWording:
+    """A refusal has to name a cause, whichever field the firmware fills in."""
+
+    async def test_the_code_is_logged_when_there_is_no_text(self, client, caplog):
+        await listen_to(client, [frame(client, {"XC_ERR": {"code": "E_BUSY"}}, 1)])
+
+        assert "E_BUSY" in caplog.text
+        assert "rejected" in caplog.text.lower()
+
+    async def test_an_empty_text_does_not_hide_the_code(self, client, caplog):
+        await listen_to(client, [frame(client, {"XC_ERR": {"text": "", "code": 4711}}, 1)])
+
+        assert "4711" in caplog.text
+
+    async def test_text_is_preferred_over_the_code(self, client, caplog):
+        await listen_to(client, [frame(client, {"XC_ERR": {"text": "blocked", "code": 4711}}, 1)])
+
+        assert "blocked" in caplog.text
+        assert "4711" not in caplog.text
+
+    async def test_a_zero_code_reaches_the_log(self, client, caplog):
+        """Same reasoning as on the HTTP path: a zero is a reported code."""
+        await listen_to(client, [frame(client, {"XC_ERR": {"code": 0}}, 1)])
+
+        rejections = [
+            item.getMessage() for item in caplog.records
+            if "rejected" in item.getMessage()
+        ]
+        assert len(rejections) == 1
+        assert rejections[0].endswith(": 0")
+
+
+class TestListenerGuard:
+    """The listener decrypts, so it needs the key material the handshake sets.
+
+    Starting it without that material would fail once per incoming message
+    instead of once, and the first failure would be logged as a decode error
+    rather than as what it is. The guard has been there since the hybrid
+    transport landed and was never covered.
+    """
+
+    async def test_it_refuses_to_start_without_a_shared_key(self, client):
+        client.shared_key = None
+
+        with pytest.raises(RuntimeError, match="before the handshake"):
+            await client._listen(FakeSocket([]))
+
+    async def test_it_refuses_to_start_without_a_device_challenge(self, client):
+        client.device_challenge = None
+
+        with pytest.raises(RuntimeError, match="before the handshake"):
+            await client._listen(FakeSocket([]))

@@ -87,6 +87,14 @@
             }
         }
     },
+    "selector": {
+        "update_mode": {
+            "options": {
+                "hybrid": "Push - WebSocket, HTTPS as fallback",
+                "polling": "Polling - HTTPS only"
+            }
+        }
+    },
     "entity": {
         "sensor": {
             "error_state": {
@@ -111,7 +119,7 @@
             "connection_mode": {
                 "name": "Connection Mode",
                 "state": {
-                    "hybrid": "Hybrid",
+                    "hybrid": "Push",
                     "polling": "Polling"
                 }
             }

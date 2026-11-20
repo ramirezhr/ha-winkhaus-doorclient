@@ -45,6 +45,111 @@ VALID_MODES = ("day", "night")
 # The lock needs a moment after setup before it accepts a WebSocket.
 WS_START_DELAY = 2.0
 
+# Upper bound for the handshake. Its two recv() calls have no deadline of
+# their own, so a lock that accepts the connection and then stays silent would
+# park the monitor task on recv() indefinitely: the keepalive only closes a
+# socket that stops answering pings, and a lock whose WebSocket layer is alive
+# answers them while its application says nothing. verify_credentials already
+# bounds the same exchange at 10 s for the config flow; this brings the
+# monitor in line. The doorControl app allows 3 s per handshake step.
+HANDSHAKE_TIMEOUT = 10.0
+
+# Packet type nibbles the lock uses on the wire. A reply to a request and an
+# unsolicited state push are told apart by this, not by their shape: both can
+# carry a filled XC_SUC object. Measured on a blueMotion+, firmware 1.6.2.
+PACKET_TYPE_PUSH = 1
+PACKET_TYPE_REPLY = 6
+
+# Upper bound for one request over the WebSocket. The slowest answer measured
+# was /api/v1/scan at over five seconds; everything else came back in 100 to
+# 300 ms. Ten seconds leaves room for a slower endpoint without letting a lost
+# answer hold a caller indefinitely.
+WS_REQUEST_TIMEOUT = 10.0
+
+# Watchdog thresholds. These are tuned against the keepalive rather than
+# picked, and the reasoning matters because ROADMAP.md refuses to make them
+# configurable on the grounds that they interlock.
+#
+# The keepalive does the fast work: ping_interval 20 plus ping_timeout 10
+# means the library closes a socket that stops answering pings within thirty
+# seconds, and it does so without any traffic of ours. What it cannot see is a
+# lock that answers pings while its application has gone quiet - that is the
+# only case left for the watchdog, and it is not an urgent one. Entities keep
+# their last reading during an outage, as the README's known limitations say,
+# so nothing wrong is displayed in the meantime.
+#
+# Protocol pings never reach `last_message_time`: it is only set inside the
+# listener's message loop, and the library handles ping and pong below that.
+# A healthy but silent connection therefore looks idle to the watchdog, which
+# is why a short threshold made it manufacture the traffic it then observed -
+# a nudge every 75 s, 1152 requests a day, detecting nothing.
+WATCHDOG_SILENCE_THRESHOLD = 300
+WATCHDOG_FALLBACK_THRESHOLD = 310
+
+
+class DeviceSilentError(TimeoutError):
+    """The request went out and no answer came back.
+
+    Distinct from a failure to send, and the distinction decides whether the
+    request may be repeated. The frame reached the wire, so whether the lock
+    acted on it is unknown - and for a command that uncertainty is not a
+    reason to send it again by another route. `unlock` pulls the latch, so a
+    second route would be a second actuation. Reads carry no side effect and
+    may fall back freely.
+
+    Subclasses TimeoutError so a caller that only cares that nothing came
+    back can still catch that.
+    """
+
+
+class DeviceRefusedError(Exception):
+    """The lock answered and refused the request.
+
+    Separate from a transport failure on purpose: a refusal must not be
+    retried over HTTP. The lock received the request and said no, so sending
+    it a second time by another route would either change nothing or, for a
+    command, carry it out twice.
+    """
+
+def describe_device_error(err: Any, fallback: str) -> str:
+    """Name the cause of an XC_ERR, from whichever field carries it.
+
+    A refusal has two fields with different jobs. "code" is the category -
+    API_ERROR for a factual error such as an unknown endpoint or a missing
+    parameter, AUTH_ERROR for a rejected authorisation - and "text" is the
+    detail the lock adds when it has something more specific to say. They
+    are not alternatives: both arrive together where the lock knows more.
+
+    Both are also optional, and either can arrive alone. Measured:
+
+        getLogs without ?type=   {"XC_ERR":{"code":"API_ERROR"}}
+        external API switched off {"XC_ERR":{"text":"api unavailable"}}
+
+    So "text" first, "code" as the fallback. That order is not a preference
+    but a requirement: the second shape above is the most common failure
+    this integration sees, and anything that reads "code" first and stops
+    there has nothing to tell the user about it. The original app reads only
+    "text" and shows nothing at all for the first shape.
+
+    A field the lock actually sent is reported verbatim, a zero and an empty
+    string included, because even a bare code is something to look up while a
+    placeholder is nothing. Only a field that is absent, null or empty falls
+    through to the next one, and the fallback is reached when neither field
+    carries anything - a shape that has shown up once in seven weeks of
+    continuous use and has never been explained.
+
+    A refusal that is not an object is stringified. The WebSocket listener has
+    always handled that shape; the HTTP path used to call .get() on it and
+    raise AttributeError where no handler covers it.
+    """
+    if not isinstance(err, dict):
+        return str(err)
+    for key in ("text", "code"):
+        if key in err and err[key] is not None and err[key] != "":
+            return str(err[key])
+    return fallback
+
+
 def create_legacy_ssl_context() -> ssl.SSLContext:
     """Build an SSL context the door controller will accept.
 
@@ -101,8 +206,21 @@ class DoorClient:
         self.client_counter = 0
         self.last_message_time = 0.0
         
+        # Consecutive failed fallback fetches, and whether the loss was
+        # already reported. The nudge going unanswered is one probe and the
+        # failed fetch a second, but a single HTTP hiccup at the wrong moment
+        # must not grey out the dashboard - so the report waits for the
+        # second failure, and then comes once per outage rather than every
+        # ten seconds for an hour.
+        self._fallback_failures = 0
+        self._contact_loss_reported = False
+
         # Callbacks & Tasks
         self.on_state_change: Callable[[list[dict[str, Any]]], None] | None = None
+        # Raised when neither route reaches the lock any more. The client
+        # reports and decides nothing: whether the shown state has to go is
+        # the coordinator's rule, because only it knows how old that state is.
+        self.on_contact_lost: Callable[[], None] | None = None
         self._watchdog_task: asyncio.Task[None] | None = None
         self._monitor_task: asyncio.Task[Any] | None = None
         self._monitor_running = False
@@ -117,8 +235,10 @@ class DoorClient:
         # ------------------------------------
 
         # --- FRAGMENT REASSEMBLY ---
-        self._rx_buffer = bytearray()  # Decrypted plaintext of pending fragments
-        self._rx_type: int | None = None  # Packet type nibble of the pending message
+        # One buffer per packet type: the lock interleaves unsolicited state
+        # pushes with the fragments of a reply, so a shared buffer would let a
+        # push truncate the reply. _listen carries the measurement this rests on.
+        self._rx_buffers: dict[int, bytearray] = {}
         # ----------------------------
 
         # --- REQUEST ATTRIBUTION ---
@@ -134,6 +254,17 @@ class DoorClient:
         # strictly increasing values rejects replays and stale frames. None
         # means "no message seen yet", so the first one is always accepted.
         self._device_counter: int | None = None
+        # ----------------------------
+
+        # --- REQUEST/RESPONSE OVER THE WEBSOCKET ---
+        # The lock answers strictly in order and carries no request
+        # identifier, so the order is the only correlation there is. One
+        # request at a time keeps it unambiguous: the lock serialises its own
+        # work anyway, so pipelining would buy nothing measurable, while a
+        # single lost answer would misalign every following one with no way
+        # back except a new handshake.
+        self._ws_lock = asyncio.Lock()
+        self._ws_reply: asyncio.Future[str] | None = None
         # ----------------------------
 
     # --- SIMPLE TRACKING METHODS ---
@@ -229,13 +360,36 @@ class DoorClient:
             raise Exception(f"Network error: {err}") from err
 
         if "XC_ERR" in response_json:
-            error_msg = response_json["XC_ERR"].get("text", "Unknown API error")
+            error_msg = describe_device_error(
+                response_json["XC_ERR"], "Unknown API error"
+            )
             raise Exception(f"Device Error: {error_msg}")
 
         result: dict[str, Any] = response_json.get("XC_SUC", {})
         return result
 
     async def get_states(self) -> list[dict[str, Any]]:
+        """Read the current state, over the WebSocket when one is up.
+
+        Measured on a blueMotion+: the answer is a reply-typed frame like any
+        other read, and it carries the same four fields the HTTP answer does -
+        state, locked, mode and time. The push that arrives on its own carries
+        the first three and leaves out time, which is why a push is merged
+        into the last full reading rather than replacing it. That difference
+        is a property of the push, not of the transport, so it is unaffected
+        by where the full reading comes from.
+        """
+        return self._format_states(await self._read("/api/v1/getStates"))
+
+    async def get_states_http(self) -> list[dict[str, Any]]:
+        """Read the state over HTTP, deliberately bypassing the WebSocket.
+
+        For the two callers whose purpose is the other transport: the
+        watchdog's fallback fetch, which runs because the socket has gone
+        quiet, and the refresh after a command that already had to go over
+        HTTP. Going through the WebSocket first would spend the request
+        timeout on a connection both of them already suspect.
+        """
         return self._format_states(await self._request("/api/v1/getStates"))
 
     def _format_states(self, raw_states: Any) -> list[dict[str, Any]]:
@@ -253,11 +407,171 @@ class DoorClient:
             interpreted_states.append({"name": key, "value": logical_value})
         return interpreted_states
 
+    async def _read(self, endpoint: str) -> dict[str, Any]:
+        """Read an endpoint over the WebSocket, over HTTP when it is not up.
+
+        The lock serves these over either transport. The WebSocket is
+        preferred because it is the connection the integration already holds
+        open, so a read there costs no new handshake and no new TCP session.
+
+        A refusal is passed on rather than retried: the lock received the
+        request and answered it, so asking again over HTTP would get the same
+        answer. Anything else is transport trouble, and HTTP is a different
+        transport - that is what makes it a useful fallback rather than a
+        second guess.
+        """
+        if self.ws_connected and self._active_ws:
+            try:
+                return await self.async_ws_request(endpoint)
+            except DeviceRefusedError as err:
+                raise Exception(f"Device Error: {err}") from err
+            except Exception as err:
+                _LOGGER.debug(
+                    f"[{self.serial_number}] WS read of {endpoint} failed "
+                    f"({err}). Falling back to HTTP."
+                )
+
+        return await self._request(endpoint)
+
     async def get_system_state(self) -> dict[str, Any]:
-        return await self._request("/api/v1/getSystemState")
+        return await self._read("/api/v1/getSystemState")
 
     async def get_configuration(self) -> dict[str, Any]:
-        return await self._request("/api/v1/getConfiguration")
+        return await self._read("/api/v1/getConfiguration")
+
+    def _encode_ws_request(self, endpoint: str, payload: dict[str, Any] | None) -> bytes:
+        """Build one request frame and advance the counter.
+
+        The counter goes into the nonce, so every frame needs its own and no
+        value may be reused within a session.
+        """
+        if self.shared_key is None or self.client_challenge is None:
+            raise RuntimeError("Send attempted before the handshake completed")
+
+        self.client_counter += 1
+        ws_data = f"{endpoint}\n{json.dumps(payload) if payload else '{}'}".encode('utf-8')
+        iv = self._get_iv(self.client_challenge, self.client_counter)
+        encrypted = AESCCM(self.shared_key, tag_length=16).encrypt(iv, ws_data, None)
+        header = b'\x85\x00' + len(encrypted).to_bytes(2, 'big')
+        return header + self.client_counter.to_bytes(4, 'big') + encrypted
+
+    def _decrypt_own_frame(self, frame: bytes) -> str:
+        """Undo _encode_ws_request. For diagnostics and for tests that want to
+        see what actually went on the wire rather than trust a mock."""
+        if self.shared_key is None or self.client_challenge is None:
+            raise RuntimeError("No key material to decrypt with")
+
+        counter = int.from_bytes(frame[4:8], 'big')
+        iv = self._get_iv(self.client_challenge, counter)
+        plain: bytes = AESCCM(self.shared_key, tag_length=16).decrypt(iv, frame[8:], None)
+        return plain.decode('utf-8')
+
+    async def _drop_socket(self) -> None:
+        """Close the live socket so the monitor loop rebuilds the session."""
+        ws = self._active_ws
+        if ws is None:
+            return
+        try:
+            await ws.close()
+        except Exception as err:
+            _LOGGER.debug(f"[{self.serial_number}] Closing the socket failed: {err}")
+
+    async def _send_status_nudge(self) -> None:
+        """Ask the lock to report its state, without waiting for an answer.
+
+        This is a nudge, not a question, and the difference is measured rather
+        than assumed. Put through the correlation layer on 15.11.2026 it never
+        saw a reply-typed frame and timed out every single time: the socket
+        was dropped, the monitor rebuilt it, and the whole cycle repeated
+        every sixteen seconds. `getStates` is not answered the way
+        `getGroups` or `getSystemState` are: it comes back as a single
+        fragment of 75 bytes, carrying `state` and `mode`.
+
+        Whatever the lock sends back therefore arrives as a state message and
+        is wanted exactly there: the dispatch in `_listen` publishes it, which
+        is how this has worked since the hybrid transport landed.
+
+        Both callers fire this only when nothing else is in flight - right
+        after a handshake, and from the watchdog after 75 s of silence - so
+        not occupying a slot in the order cannot mislead another request.
+        """
+        ws = self._active_ws
+        if not self.ws_connected or ws is None:
+            return
+
+        try:
+            async with self._ws_lock:
+                await ws.send(self._encode_ws_request("/api/v1/getStates", {}))
+            _LOGGER.debug(f"[{self.serial_number}] Status nudge sent.")
+        except Exception as err:
+            # Nothing to recover: the coordinator polls anyway, and a socket
+            # this broken is the watchdog's business, not the nudge's.
+            _LOGGER.debug(f"[{self.serial_number}] Status nudge failed: {err}")
+
+    async def async_ws_request(
+        self,
+        endpoint: str,
+        payload: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Send a request over the WebSocket and return what the lock answered.
+
+        One request is in flight at a time. The lock has no request
+        identifier, so the answer is identified by being the next reply-typed
+        message to arrive - which only holds while nothing else is waiting.
+
+        Raises `DeviceRefusedError` when the lock answered and refused, which
+        must not be retried elsewhere. Raises `TimeoutError` when no answer
+        arrived, and in that case drops the socket: a late answer would be
+        handed to the next request, and the order is all we have to go on.
+        Raises `RuntimeError` when the socket is not usable at all.
+        """
+        # Resolved here rather than as a default argument: a default is bound
+        # when the function is defined, so a test that moves the constant to
+        # keep itself quick would not actually change what this waits for.
+        if timeout is None:
+            timeout = WS_REQUEST_TIMEOUT
+
+        ws = self._active_ws
+        if not self.ws_connected or ws is None:
+            raise RuntimeError("WebSocket not connected")
+
+        async with self._ws_lock:
+            reply: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+            self._ws_reply = reply
+            try:
+                await ws.send(self._encode_ws_request(endpoint, payload))
+
+                # Remember what went out last. A rejection that arrives
+                # outside a request - for a command we did not wait on, say -
+                # has no other way to be named.
+                self._last_request = (endpoint, payload, time.time())
+
+                try:
+                    async with asyncio.timeout(timeout):
+                        raw = await reply
+                except TimeoutError:
+                    _LOGGER.warning(
+                        f"[{self.serial_number}] No answer to {endpoint} within "
+                        f"{timeout:.0f}s. Dropping the socket to resynchronise, "
+                        f"because a late answer would be read as the next one."
+                    )
+                    await self._drop_socket()
+                    raise DeviceSilentError(
+                        f"no answer to {endpoint} within {timeout:.0f}s"
+                    ) from None
+            finally:
+                self._ws_reply = None
+
+        data = json.loads(raw)
+        if "XC_ERR" in data:
+            raise DeviceRefusedError(
+                describe_device_error(data["XC_ERR"], "Unknown API error")
+            )
+
+        result: dict[str, Any] = data.get("XC_SUC", {})
+        _LOGGER.debug(f"WS request to {endpoint} answered: {result}")
+        return result
 
     # --- ASYNC COMMAND & HYBRID LOGIC ---
     async def async_send_payload(self, endpoint: str, payload: dict[str, Any] | None = None) -> bool:
@@ -266,22 +580,41 @@ class DoorClient:
             if self.shared_key is None or self.client_challenge is None:
                 raise RuntimeError("Send attempted before the handshake completed")
             try:
-                self.client_counter += 1
-                ws_data = f"{endpoint}\n{json.dumps(payload) if payload else '{}'}".encode('utf-8')
-                iv = self._get_iv(self.client_challenge, self.client_counter)
-                encrypted = AESCCM(self.shared_key, tag_length=16).encrypt(iv, ws_data, None)
-                header = b'\x85\x00' + len(encrypted).to_bytes(2, 'big')
-                
-                await self._active_ws.send(header + self.client_counter.to_bytes(4, 'big') + encrypted)
-
-                # Remember what went out last. A rejection arrives
-                # asynchronously and carries no reference to its request, so
-                # this is the only way to name the offending command.
-                self._last_request = (endpoint, payload, time.time())
-
+                await self.async_ws_request(endpoint, payload)
                 _LOGGER.debug(f"Command sent via WS to {endpoint}: {payload}")
                 return True
+            except DeviceRefusedError as err:
+                # The lock received the command and refused it. Reporting that
+                # to the caller would surface an error where none was shown
+                # before, and no benign refusal code is known yet - so it is
+                # recorded and the result stays what it has always been. The
+                # log is how we find out which codes exist.
+                _LOGGER.warning(
+                    f"[{self.serial_number}] Lock rejected "
+                    f"{self._describe_last_request()}: {err}"
+                )
+                return True
+            except DeviceSilentError:
+                # The frame did go out. Whether the lock carried it out is
+                # unknown, and that uncertainty is not a reason to send it a
+                # second time by another route: `unlock` pulls the latch, so
+                # the retry would be a second actuation. Reported as sent,
+                # which is what the result has always meant here.
+                # Named directly rather than through _describe_last_request:
+                # that one hedges when the last request is more than ten
+                # seconds old, which after a ten second timeout it always is -
+                # so the hedge would fire every time while we know exactly
+                # which request this was.
+                _LOGGER.warning(
+                    f"[{self.serial_number}] No acknowledgement for {endpoint} "
+                    f"{payload if payload else ''}. The command was sent; "
+                    f"whether the lock acted on it is unknown, so it is not "
+                    f"repeated over HTTP."
+                )
+                return True
             except Exception as e:
+                # The frame did not get out, so nothing has happened at the
+                # lock yet and another transport may still reach it.
                 _LOGGER.warning(f"WS send failed ({e}), falling back to HTTP.")
 
         try:
@@ -320,7 +653,7 @@ class DoorClient:
         if success and not self.ws_connected:
             _LOGGER.info(f"Command '{command}' sent via HTTP. Simulating push update...")
             await asyncio.sleep(3)
-            fallback_data = await self.get_states()
+            fallback_data = await self.get_states_http()
             if fallback_data and self.on_state_change:
                 self.on_state_change(fallback_data)
                 
@@ -336,28 +669,49 @@ class DoorClient:
 
     # --- WEBSOCKET LISTENER & WATCHDOG ---
     async def _watchdog_loop(self) -> None:
-        _LOGGER.info("Watchdog started (75s trigger interval).")
+        _LOGGER.info(
+            f"Watchdog started ({WATCHDOG_SILENCE_THRESHOLD}s trigger interval)."
+        )
         while not self._stop_requested:
             await asyncio.sleep(5)
             time_since_last = time.time() - self.last_message_time
-            
-            if time_since_last > 75 and self.ws_connected and self._active_ws:
-                _LOGGER.debug(f"Watchdog: {int(time_since_last)}s no message. Pinging...")
-                try:
-                    await self.async_send_payload("/api/v1/getStates", {})
-                    await asyncio.sleep(5)
-                except Exception as e:
-                    _LOGGER.debug(f"Watchdog ping failed: {e}")
 
-                if time.time() - self.last_message_time > 85:
+            if (
+                time_since_last > WATCHDOG_SILENCE_THRESHOLD
+                and self.ws_connected
+                and self._active_ws
+            ):
+                _LOGGER.debug(f"Watchdog: {int(time_since_last)}s no message. Pinging...")
+                # No handler around these two: the nudge reports its own
+                # failures and raises nothing, so a handler here could only
+                # ever catch the sleep - and a cancelled sleep is how this
+                # loop is meant to end.
+                await self._send_status_nudge()
+                await asyncio.sleep(5)
+
+                if time.time() - self.last_message_time > WATCHDOG_FALLBACK_THRESHOLD:
                     _LOGGER.warning("WS unresponsive. Triggering HTTP Fallback fetch.")
                     try:
-                        fallback_data = await self.get_states()
+                        fallback_data = await self.get_states_http()
                         if fallback_data and self.on_state_change:
                             self.on_state_change(fallback_data)
                         self.last_message_time = time.time()
+                        self._fallback_failures = 0
+                        self._contact_loss_reported = False
                     except Exception as e:
                         _LOGGER.error(f"HTTP Fallback fetch failed: {e}")
+                        self._fallback_failures += 1
+                        if (
+                            self._fallback_failures >= 2
+                            and not self._contact_loss_reported
+                        ):
+                            self._contact_loss_reported = True
+                            _LOGGER.warning(
+                                f"[{self.serial_number}] Neither the socket nor "
+                                f"HTTP is reaching the lock. Reporting the loss."
+                            )
+                            if self.on_contact_lost:
+                                self.on_contact_lost()
 
     async def _listen(self, websocket: Any) -> None:
         # Only ever called after a successful handshake, which is what sets
@@ -382,17 +736,6 @@ class DoorClient:
                     is_final = bool(header & 0x80)
                     packet_type = header & 0x0F
 
-                    # The device splits large payloads into chunks of up to
-                    # 1024 bytes and only sets the 0x80 bit on the last one.
-                    # Every chunk is encrypted separately with its own counter,
-                    # so decrypt first and concatenate the plaintext.
-                    if self._rx_type is not None and packet_type != self._rx_type:
-                        _LOGGER.debug(
-                            f"Packet type changed from {self._rx_type} to {packet_type}, "
-                            f"dropping {len(self._rx_buffer)} buffered bytes."
-                        )
-                        self._rx_buffer.clear()
-
                     counter = int.from_bytes(message[4:8], 'big')
 
                     # Reject replays and stale frames. The counter is only
@@ -409,27 +752,77 @@ class DoorClient:
                     decrypted = AESCCM(self.shared_key, tag_length=16).decrypt(iv, message[8:], None)
                     self._device_counter = counter
 
-                    self._rx_buffer.extend(decrypted)
-                    self._rx_type = packet_type
+                    # The device splits a long answer into fragments and
+                    # only sets the 0x80 bit on the last one. Every fragment
+                    # is encrypted separately with its own counter, so decrypt
+                    # first and concatenate the plaintext.
+                    #
+                    # Fragment sizes are not a size limit the device honours:
+                    # it writes along its handler's own write calls, and the
+                    # largest fragment measured was 663 bytes. The 1024 byte
+                    # rule in the vendor library belongs to the opposite
+                    # direction, where a client splits a long request. Nothing
+                    # here may assume a fragment size - only that the last one
+                    # is marked.
+                    #
+                    # Each packet type is collected on its own buffer because
+                    # the lock interleaves unsolicited state pushes (type 1)
+                    # with the fragments of a reply (type 6).
+                    #
+                    # Measured on a blueMotion+ (firmware 1.6.2) on 2026-11-15:
+                    # a 218 s capture recorded 617 frames - 70 replies at ~8.4
+                    # fragments each, plus 28 state pushes - and caught two of
+                    # those pushes arriving while a reply was still being
+                    # reassembled, with 632 and 17 bytes already buffered. An
+                    # 8-fragment reply streams over roughly 220 ms, so a push
+                    # lands inside one about 7% of the time, which matches the
+                    # two hits seen across 28 pushes.
+                    #
+                    # Sharing one buffer across types discards the
+                    # half-received reply, which then fails to decode.
+                    buffer = self._rx_buffers.setdefault(packet_type, bytearray())
+                    buffer.extend(decrypted)
 
                     if not is_final:
                         # A lost final fragment would otherwise grow this
                         # buffer without bound on a long-lived connection.
-                        if len(self._rx_buffer) > 65536:
+                        if len(buffer) > 65536:
                             _LOGGER.warning(
-                                f"[{self.serial_number}] Reassembly buffer exceeded 64 KB "
-                                f"without a final fragment. Discarding."
+                                f"[{self.serial_number}] Reassembly buffer for packet type "
+                                f"{packet_type} exceeded 64 KB without a final fragment. "
+                                f"Discarding."
                             )
-                            self._rx_buffer.clear()
-                            self._rx_type = None
+                            del self._rx_buffers[packet_type]
                         continue
 
                     # Decode only once the message is complete: a fragment can
                     # end in the middle of a multi-byte UTF-8 character.
-                    payload = bytes(self._rx_buffer).decode('utf-8')
-                    self._rx_buffer.clear()
-                    self._rx_type = None
-                   
+                    #
+                    # The buffer is retired BEFORE decoding. A message the lock
+                    # sent with invalid UTF-8 is lost either way, but leaving
+                    # its bytes behind made every later message of the same
+                    # packet type fail on them too, until the connection was
+                    # rebuilt. Losing one message is a hiccup; losing the
+                    # packet type for the rest of the session is an outage.
+                    raw = bytes(buffer)
+                    del self._rx_buffers[packet_type]
+                    payload = raw.decode('utf-8')
+
+                    # A reply belongs to whoever is waiting for one. Only the
+                    # packet type says so - a reply and a push can both carry
+                    # a filled XC_SUC, so the shape cannot decide it. With
+                    # nobody waiting the message falls through to the dispatch
+                    # below, which is what happens to the answers of the
+                    # status nudges and to every unsolicited push.
+                    waiting = self._ws_reply
+                    if (
+                        packet_type == PACKET_TYPE_REPLY
+                        and waiting is not None
+                        and not waiting.done()
+                    ):
+                        waiting.set_result(payload)
+                        continue
+
                     if payload.strip().startswith('{'):
                         data = json.loads(payload)
                         target = data.get("XC_SUC", data)
@@ -440,13 +833,12 @@ class DoorClient:
                             if self.on_state_change:
                                 self.on_state_change(formatted_info)
                         elif "XC_ERR" in data:
-                            # XC_ERR means the lock REJECTED a request.
-                            # Mirror the error extraction used in _request().
-                            err = data.get("XC_ERR")
-                            if isinstance(err, dict):
-                                err_text = err.get("text", "Unknown error")
-                            else:
-                                err_text = str(err)
+                            # XC_ERR means the lock REJECTED a request. Named
+                            # by the same helper the HTTP path uses, so the two
+                            # transports can never word a refusal differently.
+                            err_text = describe_device_error(
+                                data.get("XC_ERR"), "Unknown error"
+                            )
                             _LOGGER.warning(
                                 f"[{self.serial_number}] Lock rejected "
                                 f"{self._describe_last_request()}: {err_text}"
@@ -474,8 +866,7 @@ class DoorClient:
             self.current_session_start = None
 
             # Do not carry a half-assembled message into the next session
-            self._rx_buffer.clear()
-            self._rx_type = None
+            self._rx_buffers.clear()
 
             # The device restarts its counter on every handshake, so a stale
             # value here would reject every message of the next session.
@@ -635,7 +1026,34 @@ class DoorClient:
             try:
                 _LOGGER.info(f"Connecting WS to {self.ws_uri}...")
                 async with websockets.connect(self.ws_uri, ssl=ssl_ctx, ping_interval=20, ping_timeout=10, close_timeout=5) as ws:
-                    if await self._perform_handshake(ws):
+                    # A silent lock must not hold this task on recv(). Failing
+                    # here is cheap: the loop reconnects, and a lock that
+                    # cannot finish the exchange would not have served us.
+                    try:
+                        async with asyncio.timeout(HANDSHAKE_TIMEOUT):
+                            handshake_ok = await self._perform_handshake(ws)
+                    except TimeoutError:
+                        _LOGGER.warning(
+                            f"[{self.serial_number}] Handshake timed out after "
+                            f"{HANDSHAKE_TIMEOUT:.0f}s. The lock accepted the "
+                            f"connection but never finished the exchange. "
+                            f"Next attempt in 30s..."
+                        )
+                        self.ws_connected = False
+                        self._active_ws = None
+                        self.current_session_start = None
+                        # The same 30 s the auth failure below uses, and for
+                        # the same reason. A timeout is not a blip that clears
+                        # itself: a lock that accepts the socket and stays
+                        # silent keeps doing so until someone changes
+                        # something on it. At 5 s this branch would open a TLS
+                        # connection, hold it for the timeout and log a
+                        # warning every fifteen seconds, indefinitely - which
+                        # is the flooding the pause below exists to prevent.
+                        await asyncio.sleep(30)
+                        continue
+
+                    if handshake_ok:
                         _LOGGER.info("WS Auth OK. Connection established.")
                         self.ws_connected = True
                         self._active_ws = ws
@@ -649,7 +1067,7 @@ class DoorClient:
                         # ------------------------------------
                         
                         _LOGGER.info("Sending initial status request after successful handshake...")
-                        await self.async_send_payload("/api/v1/getStates", {})
+                        await self._send_status_nudge()
                         # -----------------------------
                         await self._listen(ws)
 

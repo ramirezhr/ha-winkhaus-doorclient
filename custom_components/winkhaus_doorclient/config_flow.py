@@ -6,16 +6,14 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.service_info.zeroconf import (  # type: ignore[attr-defined]
-    ZeroconfServiceInfo,
-)
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.components.zeroconf import async_get_instance
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
-    SelectSelector,
     SelectOptionDict,
+    SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
 )
@@ -402,7 +400,22 @@ class WinkhausDoorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if verify_serial:
             data["serial_number"] = normalise_serial(data["serial_number"], model)
 
-        await self.async_set_unique_id(data["serial_number"])
+        # raise_on_progress=False, and the reason is zeroconf. A lock is
+        # found over mDNS on its own, and that discovery flow then waits on
+        # the "Discovered" card as an uninitialized flow carrying the same
+        # unique_id. With the default, a user who instead goes through "Add
+        # integration" has their flow aborted at this line with
+        # `already_in_progress` - at the very end, after typing everything,
+        # and with nothing to tell them the answer is the card next to it.
+        # It cost one user a year of not having the integration.
+        #
+        # Duplicates are still caught: _abort_if_unique_id_configured below
+        # covers an existing entry, and the zeroconf step keeps the default
+        # so two discoveries cannot pile up. Once the entry is created,
+        # Home Assistant retires the now-pointless discovery flow itself.
+        await self.async_set_unique_id(
+            data["serial_number"], raise_on_progress=False
+        )
         self._abort_if_unique_id_configured()
 
         try:
@@ -466,18 +479,14 @@ class WinkhausOptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
+                # The labels live in strings.json under
+                # selector.update_mode, not here: hardcoding them left a
+                # German user choosing their connection mode in English
+                # while the rest of the integration was translated.
                 vol.Required(CONF_UPDATE_MODE, default=current_mode): SelectSelector(
                     SelectSelectorConfig(
-                        options=[
-                            SelectOptionDict(
-                                value=MODE_HYBRID,
-                                label="Hybrid (WebSockets + Fallback)",
-                            ),
-                            SelectOptionDict(
-                                value=MODE_POLLING,
-                                label="Classic Polling (HTTP only)",
-                            ),
-                        ],
+                        options=[MODE_HYBRID, MODE_POLLING],
+                        translation_key="update_mode",
                         mode=SelectSelectorMode.DROPDOWN
                     )
                 )

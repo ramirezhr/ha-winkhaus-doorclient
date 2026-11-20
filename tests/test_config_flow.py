@@ -724,3 +724,53 @@ async def test_scan_ignores_non_added_events(hass: HomeAssistant) -> None:
 
     assert result["type"] is data_entry_flow.FlowResultType.ABORT
     assert result["reason"] == "no_devices_found"
+
+
+async def test_manual_setup_works_while_a_discovery_is_pending(
+    hass: HomeAssistant,
+) -> None:
+    """The dead end reported in the forum thread, a year unresolved.
+
+    A lock announces itself over mDNS, so a discovery flow is already
+    sitting on the "Discovered" card with the same unique_id. Someone who
+    reaches for "Add integration" instead used to have their flow aborted
+    with `already_in_progress` at the very last step, after typing
+    everything, with nothing pointing at the card next to it.
+    """
+    discovered = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery(),
+    )
+    assert discovered["step_id"] == "auth"  # waiting for credentials
+
+    flow_id = await start_manual(hass)
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, entry_data(**{CONF_PASSWORD: "secret"})
+        )
+
+    assert result["type"] is data_entry_flow.FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == SERIAL
+
+
+async def test_the_pending_discovery_is_retired_with_the_entry(
+    hass: HomeAssistant,
+) -> None:
+    """Otherwise the card would linger and offer to add the lock again."""
+    await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery(),
+    )
+    assert len(hass.config_entries.flow.async_progress_by_handler(DOMAIN)) == 1
+
+    flow_id = await start_manual(hass)
+    with patch(CONNECT, new_callable=AsyncMock, return_value=True):
+        await hass.config_entries.flow.async_configure(
+            flow_id, entry_data(**{CONF_PASSWORD: "secret"})
+        )
+    await hass.async_block_till_done()
+
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []
+

@@ -90,8 +90,10 @@ async def async_get_config_entry_diagnostics(
             # device counter that stopped advancing, points at a problem.
             "client_counter": client.client_counter,
             "device_counter": client._device_counter,
-            "reassembly_buffer_bytes": len(client._rx_buffer),
-            "reassembly_packet_type": client._rx_type,
+            "reassembly_buffer_bytes": sum(
+                len(buffer) for buffer in client._rx_buffers.values()
+            ),
+            "reassembly_pending_types": sorted(client._rx_buffers),
             "last_request": _describe_last_request(client),
         },
         "coordinators": {

@@ -9,7 +9,8 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from typing import Any
 
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntry, DeviceInfo
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import DOMAIN
 from .coordinator import (
@@ -118,6 +119,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: WinkhausConfigEntry) -> 
             [{"name": key, "value": value} for key, value in merged.items()]
         )
 
+    def handle_contact_lost() -> None:
+        """The client reports, the coordinator decides.
+
+        Split on purpose. The client knows that neither route answered; only
+        the coordinator knows how old the state on the dashboard is, and the
+        grace window belongs next to that knowledge. Without this question a
+        hiccup during a quiet night would be enough to grey out every entity.
+        """
+        if not coordinator.state_is_stale():
+            _LOGGER.debug(
+                f"[{serial}] Contact lost, but the shown state is still "
+                f"recent enough to stand. Keeping it."
+            )
+            return
+
+        coordinator.async_set_update_error(
+            UpdateFailed("No answer from the lock on either transport")
+        )
+
+    client.on_contact_lost = handle_contact_lost
     client.on_state_change = handle_state_change
 
     if entry.options.get(CONF_UPDATE_MODE, MODE_HYBRID) == MODE_HYBRID:
@@ -149,6 +170,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: WinkhausConfigEntry) -> 
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     return True
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: WinkhausConfigEntry, device: DeviceEntry
+) -> bool:
+    """Whether the user may delete this device from the registry.
+
+    One config entry is one lock, so there is no hub a device could vanish
+    from and nothing for the integration to clean up on its own. What can
+    happen is a leftover row: the serial number is part of the key material,
+    so a replaced lock is set up under a new serial, and the old device stays
+    in the registry with its entities unavailable and no way to get rid of it
+    short of deleting the entry and starting over.
+
+    Removal is therefore allowed for any device that is not the lock this
+    entry is currently configured for, and refused for that one - it would
+    reappear on the next reload, and the way to remove it is to delete the
+    entry itself.
+    """
+    serial = entry.data.get("serial_number", "Unknown")
+    is_current = (DOMAIN, serial) in device.identifiers
+
+    if is_current:
+        _LOGGER.debug(
+            f"[{serial}] Refusing to remove the configured lock from the "
+            f"registry. Delete the config entry instead."
+        )
+    return not is_current
 
 
 async def async_update_options(hass: HomeAssistant, entry: WinkhausConfigEntry) -> None:

@@ -1,0 +1,24 @@
+# Internal working notes - measurements, open points, handover.
+# Deliberately not published: these are the workbench, not the product.
+PROTOKOLL-BEFUNDE.md
+OFFENE-PUNKTE.md
+UEBERGABE-3.0.0.md
+UMBAU-*.md
+
+# Where files handed over during a session land.
+Claude outputs/
+
+# Patches and captures that pass through the worktree root.
+*.patch
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/

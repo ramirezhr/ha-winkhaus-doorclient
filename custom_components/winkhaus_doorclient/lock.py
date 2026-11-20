@@ -51,9 +51,18 @@ class WinkhausLock(WinkhausEntity[WinkhausCoordinator], LockEntity):
 
     @property
     def is_locked(self) -> bool | None:
-        if not self.coordinator.data:
+        """The bolt position, or nothing if the lock did not report one.
+
+        The guard used to cover only the case of no data at all. An answer
+        that arrived with data but without `locked` fell through to
+        `str(None).lower() == "true"`, which is False - and False on a lock
+        entity reads as "unlocked". Of the two possible wrong answers that is
+        the worse one, so an absent field is unknown.
+        """
+        raw = self.state_value("locked")
+        if raw is None:
             return None
-        return str(self.state_value("locked")).lower() == "true"
+        return str(raw).lower() == "true"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

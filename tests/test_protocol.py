@@ -105,20 +105,18 @@ class TestDeviceCounter:
         A stale value here would reject every message of the next session.
         """
         client._device_counter = 5000
-        client._rx_buffer.extend(b"leftover")
-        client._rx_type = 1
+        client._rx_buffers[1] = bytearray(b"leftover")
 
         # what the finally block in _listen does
         client.last_session_seconds = client.get_current_uptime()
         client.ws_connected = False
         client._active_ws = None
         client.current_session_start = None
-        client._rx_buffer.clear()
-        client._rx_type = None
+        client._rx_buffers.clear()
         client._device_counter = None
 
         assert client._device_counter is None
-        assert len(client._rx_buffer) == 0
+        assert client._rx_buffers == {}
 
 
 # ------------------------------------------------------------------- requests
@@ -182,21 +180,16 @@ class TestReassembly:
         is_final = bool(header & 0x80)
         packet_type = header & 0x0F
 
-        if client._rx_type is not None and packet_type != client._rx_type:
-            client._rx_buffer.clear()
-
-        client._rx_buffer.extend(plaintext)
-        client._rx_type = packet_type
+        buffer = client._rx_buffers.setdefault(packet_type, bytearray())
+        buffer.extend(plaintext)
 
         if not is_final:
-            if len(client._rx_buffer) > 65536:
-                client._rx_buffer.clear()
-                client._rx_type = None
+            if len(buffer) > 65536:
+                del client._rx_buffers[packet_type]
             return None
 
-        payload = bytes(client._rx_buffer).decode("utf-8")
-        client._rx_buffer.clear()
-        client._rx_type = None
+        payload = bytes(buffer).decode("utf-8")
+        del client._rx_buffers[packet_type]
         return payload
 
     def test_single_message_passes_straight_through(self, client):
@@ -214,17 +207,23 @@ class TestReassembly:
         assert self.feed(client, 0x01, text[:cut]) is None
         assert self.feed(client, 0x81, text[cut:]) == text.decode("utf-8")
 
-    def test_packet_type_change_drops_the_buffer(self, client):
-        self.feed(client, 0x06, b'{"incomplete')
-        assert self.feed(client, 0x81, b'{"state":1}') == '{"state":1}'
+    def test_an_interleaved_push_does_not_drop_the_reply(self, client):
+        """The lock pushes state (type 1) between the fragments of a reply.
 
-    def test_buffer_cap_prevents_unbounded_growth(self, client):
+        Observed on real hardware, see test_api_listener for the capture.
+        Collecting both on one buffer truncates the reply, which is what makes
+        long answers such as getUsers or getLogs fail on a busy connection.
+        """
+        assert self.feed(client, 0x06, b'{"XC_SUC":{"name"') is None
+        assert self.feed(client, 0x81, b'{"state":1}') == '{"state":1}'
+        assert self.feed(client, 0xC6, b':"Haustuer"}}') == '{"XC_SUC":{"name":"Haustuer"}}'
+
+    def test_each_packet_type_is_capped_on_its_own(self, client):
         for _ in range(20):
             self.feed(client, 0x01, b"x" * 4096)
-        assert len(client._rx_buffer) <= 65536
+        assert len(client._rx_buffers.get(1, b"")) <= 65536
 
     def test_buffer_is_empty_after_a_complete_message(self, client):
         self.feed(client, 0x01, b"part")
         self.feed(client, 0x81, b"rest")
-        assert len(client._rx_buffer) == 0
-        assert client._rx_type is None
+        assert client._rx_buffers == {}
