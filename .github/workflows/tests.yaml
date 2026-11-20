@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v5"
+
+      # Home Assistant 2026.2.3 - what requirements_test.txt pins by way of
+      # pytest-homeassistant-custom-component - needs Python 3.13.2 or newer.
+      - uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: "requirements_test.txt"
+
+      - name: Install test requirements
+        run: pip install -r requirements_test.txt
+
+      - name: Run the test suite
+        run: pytest -q --cov=custom_components.winkhaus_doorclient --cov-report=term-missing
+
+      # strict = true lives in mypy.ini, so no flag is needed here.
+      - name: Type-check
+        run: mypy custom_components/winkhaus_doorclient/

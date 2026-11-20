@@ -1,0 +1,15 @@
+# Line endings in this repository are LF - in the working tree as well.
+#
+# Without this, git on Windows with core.autocrlf=true converts files to
+# CRLF on every checkout. That is not hypothetical: on 20 November 2026 a
+# checkout rewrote both workflow files, hassfest.yaml growing by exactly one
+# byte per line. The next checkout would have done the same to the Python
+# and Markdown files, and nothing would have complained - no test looks at
+# line endings, and git would have reported the files as unchanged.
+#
+# With this line the conversion is off regardless of what core.autocrlf is
+# set to, on every machine, including a future contributor's.
+* text=auto eol=lf
+
+# The Apache licence text is kept exactly as published, CRLF included.
+LICENSE -text
